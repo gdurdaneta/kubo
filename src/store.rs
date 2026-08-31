@@ -274,13 +274,11 @@ impl Store {
 /// Compara alfabéticamente salvo cuando ambos valores son duraciones o
 /// números: ahí "2m" tiene que ir antes que "10m", y "9" antes que "10".
 fn comparar(a: &str, b: &str) -> std::cmp::Ordering {
-    match (a_segundos(a), a_segundos(b)) {
-        (Some(x), Some(y)) => return x.cmp(&y),
-        _ => {}
+    if let (Some(x), Some(y)) = (a_segundos(a), a_segundos(b)) {
+        return x.cmp(&y);
     }
-    match (a.parse::<f64>(), b.parse::<f64>()) {
-        (Ok(x), Ok(y)) => return x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
-        _ => {}
+    if let (Ok(x), Ok(y)) = (a.parse::<f64>(), b.parse::<f64>()) {
+        return x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal);
     }
     a.to_lowercase().cmp(&b.to_lowercase())
 }

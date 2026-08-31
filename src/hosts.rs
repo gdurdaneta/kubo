@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn compone_sin_tocar_el_resto_del_archivo() {
         let original = "127.0.0.1\tlocalhost\n::1\tip6-localhost\n";
-        let con = componer(&original, &[(ip(14, 7), "agent-ops".into())]);
+        let con = componer(original, &[(ip(14, 7), "agent-ops".into())]);
         assert!(con.contains("127.0.0.1\tlocalhost"));
         assert!(con.contains("::1\tip6-localhost"));
         assert!(con.contains("127.30.14.7\tagent-ops"));

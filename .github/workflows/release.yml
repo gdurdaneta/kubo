@@ -97,7 +97,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { path: artefactos }
       - name: Crear release
-        run: gh release create "${GITHUB_REF_NAME}" artefactos/*/* \
-               --repo "${GITHUB_REPOSITORY}" --generate-notes
+        # Bloque literal: un escalar plano de YAML pliega los saltos de línea y
+        # la barra de continuación quedaba como argumento suelto.
+        run: |
+          gh release create "$GITHUB_REF_NAME" artefactos/*/* \
+            --repo "$GITHUB_REPOSITORY" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

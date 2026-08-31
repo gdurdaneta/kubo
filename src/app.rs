@@ -108,9 +108,12 @@ pub struct VistaTerm {
 }
 
 /// Qué ocupa la franja inferior de un panel.
+///
+/// `VistaTerm` lleva el parser de vt100 y pesa bastante más que `VistaLogs`;
+/// va en Box para que el enum no ocupe siempre el tamaño de la más grande.
 pub enum Bottom {
-    Logs(VistaLogs),
-    Term(VistaTerm),
+    Logs(Box<VistaLogs>),
+    Term(Box<VistaTerm>),
 }
 
 /// Un panel: una vista independiente sobre algún cluster.
@@ -1300,7 +1303,7 @@ impl App {
         if let Some(pane) = self.pane(pane_id) {
             pane.cerrar_bottom();
             let contenedor = contenedores.first().cloned();
-            pane.bottom = Some(Bottom::Logs(VistaLogs {
+            pane.bottom = Some(Bottom::Logs(Box::new(VistaLogs {
                 ns,
                 pod,
                 contenedores,
@@ -1313,7 +1316,7 @@ impl App {
                 token: 0,
                 cerrado: None,
                 tarea: None,
-            }));
+            })));
         }
         self.reiniciar_logs(pane_id);
     }
@@ -1371,7 +1374,7 @@ impl App {
 
         if let Some(pane) = self.pane(pane_id) {
             pane.cerrar_bottom();
-            pane.bottom = Some(Bottom::Term(VistaTerm {
+            pane.bottom = Some(Bottom::Term(Box::new(VistaTerm {
                 ns,
                 pod,
                 contenedor,
@@ -1385,7 +1388,7 @@ impl App {
                 cols: 80,
                 rows: 24,
                 tarea: Some(tarea),
-            }));
+            })));
         }
     }
 

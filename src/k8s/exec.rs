@@ -16,6 +16,7 @@ pub struct TermHandles {
 
 /// Abre la sesión y bombea bytes en ambos sentidos hasta que el proceso
 /// remoto termina o la tarea se aborta.
+#[allow(clippy::too_many_arguments)] // ns, pod, contenedor, tamaño, canales y token: agruparlos sería un struct de un solo uso
 pub async fn run(
     client: Client,
     ns: String,

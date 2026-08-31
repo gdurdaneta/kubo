@@ -96,10 +96,8 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
         });
     });
 
-    if modal.should_close() || cancelar {
-        if !ejecutar {
-            app.confirm = None;
-        }
+    if (modal.should_close() || cancelar) && !ejecutar {
+        app.confirm = None;
     }
     if ejecutar {
         app.ejecutar_confirmada();
