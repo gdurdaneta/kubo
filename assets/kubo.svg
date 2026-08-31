@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Timón de Kubernetes reducido a lo mínimo: un anillo con seis radios,
+       sobre el azul del tema de kubo. -->
+  <defs>
+    <linearGradient id="f" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3245"/>
+      <stop offset="1" stop-color="#1b2030"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#f)"/>
+  <g transform="translate(256 256)" fill="none" stroke="#5aa9ff"
+     stroke-width="26" stroke-linecap="round">
+    <circle r="132"/>
+    <g id="radios">
+      <line y1="-132" y2="-186"/>
+      <line y1="-132" y2="-186" transform="rotate(60)"/>
+      <line y1="-132" y2="-186" transform="rotate(120)"/>
+      <line y1="-132" y2="-186" transform="rotate(180)"/>
+      <line y1="-132" y2="-186" transform="rotate(240)"/>
+      <line y1="-132" y2="-186" transform="rotate(300)"/>
+    </g>
+  </g>
+  <circle cx="256" cy="256" r="46" fill="#5aa9ff"/>
+</svg>

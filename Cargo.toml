@@ -21,9 +21,13 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 vt100 = "0.16.2"
 base64 = "0.23.1"
+png = "0.18.1"
 
 [profile.release]
 opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
