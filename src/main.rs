@@ -44,7 +44,45 @@ fn icono() -> egui::IconData {
     }
 }
 
+/// `--version` y `--help` salen sin abrir ventana.
+///
+/// Además de ser lo que uno espera de un binario, permite comprobar en CI que
+/// el ejecutable arranca en Windows y macOS —que se resuelven sus librerías y
+/// no le falta ningún símbolo— sin necesidad de un escritorio.
+fn atajo_de_linea_de_comandos() -> bool {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("--version" | "-V") => {
+            println!("kubo {}", env!("CARGO_PKG_VERSION"));
+            true
+        }
+        Some("--help" | "-h") => {
+            println!(
+                "kubo {} — cliente de escritorio para Kubernetes\n\
+                 \n\
+                 Uso: kubo [opciones]\n\
+                 \n\
+                 Sin argumentos abre la ventana. Los clusters salen de tu\n\
+                 kubeconfig (KUBECONFIG o ~/.kube/config).\n\
+                 \n\
+                 Opciones:\n\
+                 \x20 -V, --version   Versión y salir\n\
+                 \x20 -h, --help      Esta ayuda\n\
+                 \n\
+                 Dentro de la app, F1 muestra los atajos de teclado.",
+                env!("CARGO_PKG_VERSION")
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
 fn main() -> eframe::Result {
+    if atajo_de_linea_de_comandos() {
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)

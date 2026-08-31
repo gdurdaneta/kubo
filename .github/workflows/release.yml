@@ -29,6 +29,16 @@ jobs:
               . "$HOME/.cargo/env"
               cargo build --release --locked
             '
+      # Docker sí sirve para esto: comprobar que el binario arranca en las
+      # distros viejas a las que apunta el contenedor de build. (Para Windows
+      # y macOS no hay contenedor posible: uno necesita kernel de Windows y el
+      # otro solo puede virtualizarse en hardware de Apple.)
+      - name: Probar en distros viejas
+        run: |
+          for img in ubuntu:22.04 debian:12 fedora:40; do
+            echo "--- $img"
+            docker run --rm -v "$PWD/target/release/kubo":/kubo:ro "$img" /kubo --version
+          done
       - name: Empaquetar
         run: |
           mkdir -p dist && cp target/release/kubo dist/
@@ -52,6 +62,18 @@ jobs:
           cargo build --release --locked --target x86_64-apple-darwin
       - name: Armar .app y .dmg
         run: ./packaging/macos.sh "${GITHUB_REF_NAME#v}"
+      # El runner es macOS de verdad: se ejecuta el binario del bundle para
+      # confirmar que arranca, que la firma vale y que trae las dos arquitecturas.
+      - name: Probar el bundle
+        run: |
+          ./dist/kubo.app/Contents/MacOS/kubo --version
+          codesign --verify --deep --strict --verbose=2 dist/kubo.app
+          lipo -archs dist/kubo.app/Contents/MacOS/kubo
+          # Que el .dmg monte y la app esté adentro.
+          hdiutil attach dist/kubo-macos-universal.dmg -mountpoint /tmp/kubo-dmg -nobrowse
+          ls -la /tmp/kubo-dmg
+          /tmp/kubo-dmg/kubo.app/Contents/MacOS/kubo --version
+          hdiutil detach /tmp/kubo-dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -63,6 +85,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
       - run: cargo build --release --locked
+      # El runner es Windows de verdad: si al .exe le faltara una DLL o un
+      # símbolo, esto falla acá y no en la máquina de quien lo descargue.
+      - name: Probar el .exe
+        run: |
+          .\\target\\release\\kubo.exe --version
+          .\\target\\release\\kubo.exe --help
       - name: Empaquetar
         shell: bash
         run: |
