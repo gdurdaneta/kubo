@@ -133,7 +133,7 @@ pub async fn fetch_events(
                 })
                 .collect();
             // Más recientes arriba, como en kubectl describe.
-            rows.sort_by(|a, b| b.last.cmp(&a.last));
+            rows.sort_by_key(|e| std::cmp::Reverse(e.last));
             rows
         }
         Err(_) => Vec::new(),
