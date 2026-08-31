@@ -73,7 +73,7 @@ jobs:
           hdiutil attach dist/kubo-macos-universal.dmg -mountpoint /tmp/kubo-dmg -nobrowse
           ls -la /tmp/kubo-dmg
           /tmp/kubo-dmg/kubo.app/Contents/MacOS/kubo --version
-          hdiutil detach /tmp/kubo-dmg"
+          hdiutil detach /tmp/kubo-dmg
       - uses: actions/upload-artifact@v4
         with:
           name: macos
