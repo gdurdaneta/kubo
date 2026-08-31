@@ -1,4 +1,7 @@
 /target
+/target-dist
+/dist
+/.cargo-docker
 
 # Capturas con datos de clusters reales (endpoints, IPs, hostnames internos).
 # Si hace falta una para el README, sacarla de un kind/minikube.

@@ -84,7 +84,7 @@ pub fn dialogo(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
         ui.add_space(6.0);
 
         // --- resolución por nombre ---
-        let valido = crate::hosts::nombre_valido(&d.servicio);
+        let valido = crate::hosts::nombre_valido(&d.servicio) && crate::hosts::soportado();
         ui.add_enabled_ui(valido, |ui| {
             ui.checkbox(&mut d.alias, "resolver por nombre (alias en /etc/hosts)")
                 .on_hover_text(
@@ -96,23 +96,18 @@ pub fn dialogo(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
             d.alias = false;
             ui.colored_label(
                 theme::TEXTO_TENUE,
-                "el nombre no sirve como entrada de /etc/hosts",
+                if crate::hosts::soportado() {
+                    "el nombre no sirve como entrada de /etc/hosts".to_string()
+                } else {
+                    crate::hosts::motivo_no_soportado().to_string()
+                },
             );
         }
 
         // --- cómo va a quedar ---
         let local = d.puerto_local.trim().parse::<u16>().unwrap_or(0);
-        let (host, nota) = if d.alias {
-            (
-                d.servicio.clone(),
-                format!("escucha en {}", portforward::ip_para(&d.servicio)),
-            )
-        } else {
-            (
-                format!("{}.localhost", d.servicio),
-                "escucha en 127.0.0.1".to_string(),
-            )
-        };
+        let host = portforward::host_de(d.alias, &d.servicio);
+        let nota = format!("escucha en {}", portforward::bind_de(d.alias, &d.servicio));
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.colored_label(theme::TEXTO_TENUE, "Vas a consumirlo en");

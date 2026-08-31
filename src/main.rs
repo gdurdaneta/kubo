@@ -8,6 +8,7 @@
 mod app;
 mod hosts;
 mod layout;
+mod rutas;
 mod columns;
 mod k8s;
 mod nav;

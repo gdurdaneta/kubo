@@ -13,6 +13,29 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail, Context as _, Result};
 
 const RUTA: &str = "/etc/hosts";
+
+/// ¿Se puede resolver un Service por su nombre en esta plataforma?
+///
+/// Hace falta editar `/etc/hosts` con privilegios y que el sistema enrute todo
+/// `127.0.0.0/8`. Linux cumple las dos: `pkexec` da el diálogo gráfico y el
+/// rango entero es loopback sin configurar nada. macOS necesitaría un
+/// `ifconfig lo0 alias` por cada servicio (solo 127.0.0.1 está enrutado de
+/// fábrica) y Windows, elevación por UAC sobre otro archivo. Mientras no estén
+/// implementados, el port-forward de esas plataformas escucha en 127.0.0.1.
+pub const fn soportado() -> bool {
+    cfg!(target_os = "linux")
+}
+
+/// Por qué no se puede, para decirlo en la UI en vez de dejar el check muerto.
+pub const fn motivo_no_soportado() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "en macOS haría falta un alias de loopback por servicio (ifconfig lo0 alias)"
+    } else if cfg!(target_os = "windows") {
+        "en Windows haría falta elevación por UAC para editar el archivo hosts"
+    } else {
+        "solo implementado en Linux"
+    }
+}
 const INICIO: &str = "# >>> kubo port-forward >>>";
 const FIN: &str = "# <<< kubo port-forward <<<";
 
@@ -31,6 +54,9 @@ pub fn nombre_valido(n: &str) -> bool {
 
 /// Alias que kubo tiene puestos ahora mismo.
 pub fn actuales() -> Vec<(IpAddr, String)> {
+    if !soportado() {
+        return Vec::new();
+    }
     let Ok(txt) = std::fs::read_to_string(RUTA) else {
         return Vec::new();
     };
@@ -113,6 +139,9 @@ fn ruta_temporal() -> Result<PathBuf> {
 /// Bloquea mientras el usuario responde el diálogo de polkit: va en el runtime
 /// de tokio, nunca en el hilo de la UI.
 pub fn aplicar(entradas: &[(IpAddr, String)]) -> Result<()> {
+    if !soportado() {
+        bail!("resolver por nombre no está soportado acá: {}", motivo_no_soportado());
+    }
     for (_, n) in entradas {
         if !nombre_valido(n) {
             bail!("nombre de servicio inválido para /etc/hosts: {n:?}");

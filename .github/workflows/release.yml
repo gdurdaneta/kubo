@@ -1,0 +1,103 @@
+# Compila kubo para Linux, macOS y Windows y publica los binarios en una
+# release. Se dispara al empujar un tag `v*` (o a mano desde Actions).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.nombre }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # glibc es compatible hacia adelante, no hacia atrás: se compila en
+          # un contenedor viejo para no dejar afuera a Ubuntu 22.04.
+          - nombre: linux-x86_64
+            os: ubuntu-latest
+            contenedor: ubuntu:22.04
+            binario: kubo
+          - nombre: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            binario: kubo
+          - nombre: macos-x86_64
+            os: macos-14
+            target: x86_64-apple-darwin
+            binario: kubo
+          - nombre: windows-x86_64
+            os: windows-latest
+            binario: kubo.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar en contenedor (Linux)
+        if: matrix.contenedor != ''
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            -e CARGO_TERM_COLOR=always ${{ matrix.contenedor }} bash -euo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                curl ca-certificates build-essential pkg-config
+              curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+              . "$HOME/.cargo/env"
+              cargo build --release --locked
+            '
+
+      - name: Instalar toolchain
+        if: matrix.contenedor == ''
+        run: |
+          rustup toolchain install stable --profile minimal
+          if [ -n "${{ matrix.target }}" ]; then rustup target add ${{ matrix.target }}; fi
+        shell: bash
+
+      - name: Compilar
+        if: matrix.contenedor == ''
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release --locked --target ${{ matrix.target }}
+            echo "SALIDA=target/${{ matrix.target }}/release" >> "$GITHUB_ENV"
+          else
+            cargo build --release --locked
+            echo "SALIDA=target/release" >> "$GITHUB_ENV"
+          fi
+        shell: bash
+
+      - name: Empaquetar
+        run: |
+          SALIDA="${SALIDA:-target/release}"
+          mkdir -p dist
+          cp "$SALIDA/${{ matrix.binario }}" "dist/${{ matrix.binario }}"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "kubo-${{ matrix.nombre }}.zip" "${{ matrix.binario }}"
+          else
+            tar czf "kubo-${{ matrix.nombre }}.tar.gz" "${{ matrix.binario }}"
+          fi
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubo-${{ matrix.nombre }}
+          path: dist/kubo-${{ matrix.nombre }}.*
+
+  publicar:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artefactos }
+      - name: Crear release
+        run: gh release create "${GITHUB_REF_NAME}" artefactos/*/* \
+               --repo "${GITHUB_REPOSITORY}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

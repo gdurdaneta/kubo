@@ -19,13 +19,10 @@ pub const BAD: Color32 = Color32::from_rgb(0xe5, 0x63, 0x63);
 /// sin esto la UI se llena de cuadraditos. DejaVu sí los tiene y está en
 /// cualquier distro; si falta, se sigue con las de egui.
 fn cargar_fuentes(ctx: &egui::Context) {
-    const PROPORCIONAL: &str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-    const MONO: &str = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
-
     let mut fuentes = egui::FontDefinitions::default();
     let mut hubo_cambio = false;
 
-    if let Ok(bytes) = std::fs::read(PROPORCIONAL) {
+    if let Some(bytes) = crate::rutas::primera_existente(crate::rutas::FUENTES_PROPORCIONALES) {
         fuentes
             .font_data
             .insert("sistema".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
@@ -36,7 +33,7 @@ fn cargar_fuentes(ctx: &egui::Context) {
         hubo_cambio = true;
     }
 
-    if let Ok(bytes) = std::fs::read(MONO) {
+    if let Some(bytes) = crate::rutas::primera_existente(crate::rutas::FUENTES_MONO) {
         fuentes
             .font_data
             .insert("sistema_mono".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));

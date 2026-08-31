@@ -872,11 +872,7 @@ impl App {
 
         let id = self.token();
         let bind = k8s::portforward::bind_de(d.alias, &d.servicio);
-        let host = if d.alias {
-            d.servicio.clone()
-        } else {
-            format!("{}.localhost", d.servicio)
-        };
+        let host = k8s::portforward::host_de(d.alias, &d.servicio);
         self.forwards.push(Forward {
             id,
             contexto: d.contexto.clone(),

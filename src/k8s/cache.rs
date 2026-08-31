@@ -16,14 +16,12 @@ use super::Discovered;
 const VIGENCIA: Duration = Duration::from_secs(60 * 60 * 24);
 
 fn ruta(server: &str) -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    let base = crate::rutas::cache()?;
     // El URL del server no sirve como nombre de archivo; el hash sí, y además
     // no deja rastro del endpoint en el nombre.
     let mut h = std::collections::hash_map::DefaultHasher::new();
     server.hash(&mut h);
-    Some(base.join("kubo/discovery").join(format!("{:016x}.json", h.finish())))
+    Some(base.join("discovery").join(format!("{:016x}.json", h.finish())))
 }
 
 /// Copia guardada, si existe y se puede parsear. `true` en el segundo campo

@@ -292,13 +292,27 @@ pub fn puerto_local_sugerido(puerto_svc: u16) -> u16 {
 
 /// Dirección donde bindear según el modo de resolución elegido.
 pub fn bind_de(alias: bool, servicio: &str) -> IpAddr {
-    if alias {
+    if alias && crate::hosts::soportado() {
         // Con alias en /etc/hosts cada servicio tiene su IP: pueden convivir
-        // dos servicios en el mismo puerto.
+        // dos servicios en el mismo puerto. Solo Linux enruta todo
+        // 127.0.0.0/8 sin configurar interfaces.
         IpAddr::V4(ip_para(servicio))
     } else {
-        // `*.localhost` resuelve siempre a loopback estándar.
         IpAddr::V4(Ipv4Addr::LOCALHOST)
+    }
+}
+
+/// Host por el que se consume el forward.
+///
+/// `*.localhost` lo resuelve systemd-resolved sin configurar nada, pero eso es
+/// de Linux: en macOS y Windows no es confiable, así que ahí se ofrece la IP.
+pub fn host_de(alias: bool, servicio: &str) -> String {
+    if alias && crate::hosts::soportado() {
+        servicio.to_string()
+    } else if cfg!(target_os = "linux") {
+        format!("{servicio}.localhost")
+    } else {
+        Ipv4Addr::LOCALHOST.to_string()
     }
 }
 
