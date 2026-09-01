@@ -99,6 +99,16 @@ Variables de entorno para probar sin clickear: `KUBO_TEST_SHELL=ns/pod`
 - `port-forward`.
 - Drag para reordenar paneles; layouts guardados.
 
+## Instalar en Linux
+
+```sh
+cargo build --release
+./instalar.sh
+```
+
+Deja el binario en `~/.local/bin`, el ícono en el tema hicolor y la entrada
+en el launcher. Sin sudo. Para sacarlo: `./instalar.sh --quitar`.
+
 ## Publicar una versión
 
 ```sh
