@@ -109,3 +109,8 @@ El push del tag dispara el workflow, que compila los tres sistemas, ejecuta
 cada binario en su plataforma y publica la release. `dist.sh` compila el de
 Linux localmente en un contenedor con glibc viejo, por si querés uno sin
 pasar por CI.
+
+## Licencia
+
+MIT o Apache-2.0, a elección — la convención del ecosistema Rust. Ver
+[LICENSE-MIT](LICENSE-MIT) y [LICENSE-APACHE](LICENSE-APACHE).

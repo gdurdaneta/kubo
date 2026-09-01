@@ -3,6 +3,8 @@ name = "kubo"
 version = "0.1.0"
 edition = "2021"
 description = "Cliente de escritorio para Kubernetes — nativo, sin webview"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gdurdaneta/kubo"
 
 [dependencies]
 eframe = { version = "0.35.0", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
