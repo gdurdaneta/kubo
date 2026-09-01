@@ -15,6 +15,11 @@ fn tiene_mapa(kind: &str) -> bool {
 }
 
 pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
+    // Clava el ancho del contenido al del panel. Sin esto un valor largo —una
+    // anotación, un chip— le pide más espacio del que hay y el panel entero se
+    // desalinea en vez de recortar ese valor.
+    ui.set_max_width(ui.available_width());
+
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
     };
@@ -420,7 +425,13 @@ fn resumen(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject) {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let motivo = str_de(c, "reason");
                         if !motivo.is_empty() {
-                            ui.colored_label(theme::TEXTO_TENUE, motivo);
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&motivo).color(theme::TEXTO_TENUE),
+                                )
+                                .truncate(),
+                            )
+                            .on_hover_text(&motivo);
                         }
                     });
                 });
@@ -706,22 +717,35 @@ fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
             )
             .truncate(),
         );
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-        ui.label(egui::RichText::new(valor).size(12.0));
+        // `.wrap()` explícito: heredar el wrap del estilo no alcanzaba dentro
+        // de un layout horizontal y los valores largos salían cortados.
+        ui.add(egui::Label::new(egui::RichText::new(valor).size(12.0)).wrap());
     });
 }
 
 fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
+    let ancho = ui.available_width();
     ui.horizontal_wrapped(|ui| {
+        ui.set_max_width(ancho);
         for (k, v) in mapa {
             egui::Frame::new()
                 .fill(theme::PANEL_ALT)
                 .corner_radius(3)
                 .inner_margin(egui::Margin::symmetric(5, 2))
                 .show(ui, |ui| {
-                    ui.colored_label(
-                        theme::TEXTO_TENUE,
-                        egui::RichText::new(format!("{k}={v}")).size(11.0),
+                    // Sin truncar, para que `horizontal_wrapped` conozca el
+                    // ancho real de cada chip y pase de fila cuando toca;
+                    // truncados todos reportan lo mínimo y se apretaban en una
+                    // sola línea. El tope de ancho hace que una etiqueta
+                    // enorme se parta adentro de su caja en vez de desbordar.
+                    ui.set_max_width(ancho - 24.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(format!("{k}={v}"))
+                                .size(11.0)
+                                .color(theme::TEXTO_TENUE),
+                        )
+                        .wrap(),
                     );
                 });
         }

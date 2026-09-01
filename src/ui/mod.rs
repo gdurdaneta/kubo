@@ -83,6 +83,9 @@ fn pane_de(a: &Accion) -> Option<u64> {
     }
 }
 
+/// Lo que se le reserva a la tabla cuando el detalle está abierto.
+const ANCHO_MIN_TABLA: f32 = 260.0;
+
 fn marco(fondo: egui::Color32, margen: i8) -> egui::Frame {
     egui::Frame::new().fill(fondo).inner_margin(margen)
 }
@@ -415,10 +418,16 @@ fn dibujar_pane(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accio
         .map(|p| p.detalle.is_some())
         .unwrap_or(false);
     if hay_detalle {
+        // El tope se calcula contra el espacio real del panel, no fijo. Con un
+        // tope mayor al disponible, egui recorta el panel a lo que entra pero
+        // le da al contenido el ancho pedido: queda cortado por los dos lados
+        // (se veía con un Node, cuyas anotaciones son larguísimas).
+        let disponible = ui.available_width();
+        let max_detalle = (disponible - ANCHO_MIN_TABLA).clamp(280.0, 900.0);
         egui::Panel::right(egui::Id::new(("detalle", id)))
             .resizable(true)
-            .default_size(430.0)
-            .size_range(280.0..=900.0)
+            .default_size(430.0_f32.min(max_detalle))
+            .size_range(280.0_f32.min(max_detalle)..=max_detalle)
             .frame(marco(theme::PANEL, 8))
             .show(ui, |ui| detail::dibujar(app, ui, id, accion));
     }

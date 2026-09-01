@@ -78,6 +78,19 @@ fn atajo_de_linea_de_comandos() -> bool {
     }
 }
 
+/// Tamaño inicial de la ventana. `KUBO_TEST_SIZE=1046x894` lo fija, para
+/// reproducir problemas de layout a un ancho concreto sin pelearse con el
+/// gestor de ventanas.
+fn tamano_inicial() -> [f32; 2] {
+    std::env::var("KUBO_TEST_SIZE")
+        .ok()
+        .and_then(|v| {
+            let (a, b) = v.split_once(['x', 'X'])?;
+            Some([a.trim().parse().ok()?, b.trim().parse().ok()?])
+        })
+        .unwrap_or([1440.0, 900.0])
+}
+
 fn main() -> eframe::Result {
     if atajo_de_linea_de_comandos() {
         return Ok(());
@@ -93,7 +106,7 @@ fn main() -> eframe::Result {
             .with_title("kubo")
             .with_app_id("kubo")
             .with_icon(icono())
-            .with_inner_size([1440.0, 900.0])
+            .with_inner_size(tamano_inicial())
             .with_min_inner_size([900.0, 560.0]),
         ..Default::default()
     };
