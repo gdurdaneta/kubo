@@ -11,6 +11,61 @@ use crate::theme;
 const ALTO_FILA: f32 = 24.0;
 /// Ancho asumido para la columna elástica al medir si la tabla entra a lo ancho.
 const ANCHO_ELASTICA: f32 = 220.0;
+/// Hasta dónde se puede achicar una columna antes de dejar de servir.
+const ANCHO_MIN_COL: f32 = 56.0;
+/// La primera columna es el nombre: achicarla de más vuelve la tabla inútil.
+const ANCHO_MIN_NOMBRE: f32 = 130.0;
+
+/// Reparte el ancho disponible entre las columnas.
+///
+/// Los anchos declarados son los deseados, no un mínimo: si la ventana es más
+/// angosta se encogen proporcionalmente hasta su piso. Solo cuando ni con los
+/// pisos entra se cae al scroll horizontal — antes se iba a scroll siempre, y
+/// al achicar la ventana las columnas ni se enteraban.
+fn repartir_anchos(cabeceras: &[ColSpec], disponible: f32, sep: f32) -> (Vec<f32>, bool) {
+    let huecos = sep * cabeceras.len() as f32;
+    let deseados: Vec<f32> = cabeceras
+        .iter()
+        .map(|c| c.width.unwrap_or(ANCHO_ELASTICA))
+        .collect();
+    let natural: f32 = deseados.iter().sum();
+    if natural + huecos <= disponible {
+        return (deseados, false);
+    }
+
+    let piso = |i: usize| if i == 0 { ANCHO_MIN_NOMBRE } else { ANCHO_MIN_COL };
+    let minimo: f32 = (0..deseados.len()).map(piso).sum();
+    if minimo + huecos > disponible {
+        // Ni encogidas al máximo entran: se scrollea.
+        return ((0..deseados.len()).map(piso).collect(), true);
+    }
+
+    // Encoge proporcionalmente y reparte entre las que todavía tienen margen
+    // lo que las que tocaron su piso no pudieron ceder.
+    let objetivo = disponible - huecos;
+    let mut anchos = deseados.clone();
+    for _ in 0..8 {
+        let total: f32 = anchos.iter().sum();
+        let sobra = total - objetivo;
+        if sobra <= 0.5 {
+            break;
+        }
+        let elasticas: f32 = anchos
+            .iter()
+            .enumerate()
+            .map(|(i, w)| (w - piso(i)).max(0.0))
+            .sum();
+        if elasticas <= 0.5 {
+            break;
+        }
+        for (i, w) in anchos.iter_mut().enumerate() {
+            let margen = (*w - piso(i)).max(0.0);
+            *w -= sobra * (margen / elasticas);
+            *w = w.max(piso(i));
+        }
+    }
+    (anchos, false)
+}
 
 /// Kinds con pestaña "Mapa" (misma lista que usa el detalle).
 fn tiene_mapa(kind: &str) -> bool {
@@ -42,6 +97,11 @@ pub fn id_busqueda(pane_id: u64) -> egui::Id {
 }
 
 pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
+    // Las celdas son objetivos de clic, no texto para seleccionar: arrastrando
+    // sobre la tabla se pintaba media pantalla de azul. En el detalle sí queda
+    // seleccionable, que ahí uno copia UIDs e IPs.
+    ui.style_mut().interaction.selectable_labels = false;
+
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
     };
@@ -128,27 +188,26 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     }
 
     let cabeceras = columns::headers(&kind, mostrar_ns);
-    let ancho_pedido: f32 = cabeceras
-        .iter()
-        .map(|c| c.width.unwrap_or(ANCHO_ELASTICA))
-        .sum::<f32>()
-        + ui.spacing().item_spacing.x * cabeceras.len() as f32;
+    let sep = ui.spacing().item_spacing.x;
+    let (anchos, scrollear) = repartir_anchos(&cabeceras, ui.available_width(), sep);
+    let ancho_pedido: f32 = anchos.iter().sum::<f32>() + sep * cabeceras.len() as f32;
 
-    // Con el detalle abierto (o en paneles angostos) la tabla no entra a lo
-    // ancho; sin esto las últimas columnas quedan cortadas e inalcanzables.
-    if ancho_pedido > ui.available_width() {
+    // Con el detalle abierto (o en paneles muy angostos) ni encogidas entran;
+    // sin esto las últimas columnas quedan cortadas e inalcanzables.
+    if scrollear {
         egui::ScrollArea::horizontal()
             .id_salt(("tabla_h", id))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.set_min_width(ancho_pedido);
                 cuerpo(
-                    ui, store, &cabeceras, filas, &sel_key, &kind, id, endpoints, accion,
+                    ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints,
+                    accion,
                 );
             });
     } else {
         cuerpo(
-            ui, store, &cabeceras, filas, &sel_key, &kind, id, endpoints, accion,
+            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, accion,
         );
     }
 }
@@ -158,6 +217,7 @@ fn cuerpo(
     ui: &mut egui::Ui,
     store: &mut crate::store::Store,
     cabeceras: &[ColSpec],
+    anchos: &[f32],
     filas: usize,
     sel_key: &Option<String>,
     kind: &str,
@@ -170,7 +230,14 @@ fn cuerpo(
     let sort_desc = store.sort_desc;
     let mut nuevo_sort: Option<usize> = None;
 
+    // El id lleva el kind y el ancho: egui_extras guarda los anchos de columna
+    // y, con `resizable`, los conserva para siempre. Sin esto los de Pods se
+    // colaban en Nodes, y al achicar la ventana las columnas no se enteraban.
+    // Con el ancho en cuartos, arrastrar una columna se mantiene mientras la
+    // ventana no cambie de tamaño, pero un resize sí rearma el reparto.
+    let salt = (kind, cabeceras.len(), (anchos.iter().sum::<f32>() / 24.0) as i32);
     let mut builder = TableBuilder::new(ui)
+        .id_salt(salt)
         .striped(true)
         .resizable(true)
         .sense(egui::Sense::click())
@@ -178,11 +245,9 @@ fn cuerpo(
         .min_scrolled_height(0.0)
         .auto_shrink([false, false]);
 
-    for c in cabeceras {
-        builder = match c.width {
-            Some(w) => builder.column(Column::initial(w).at_least(48.0).clip(true)),
-            None => builder.column(Column::remainder().at_least(120.0).clip(true)),
-        };
+    for (i, _) in cabeceras.iter().enumerate() {
+        let w = anchos.get(i).copied().unwrap_or(ANCHO_ELASTICA);
+        builder = builder.column(Column::initial(w).at_least(40.0).clip(true));
     }
 
     builder
@@ -452,5 +517,66 @@ pub fn menu_acciones(
         let n = key.rsplit('/').next().unwrap_or(key).to_string();
         ui.ctx().copy_text(n);
         ui.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cols(anchos: &[f32]) -> Vec<ColSpec> {
+        anchos
+            .iter()
+            .map(|w| ColSpec {
+                title: "x",
+                width: Some(*w),
+            })
+            .collect()
+    }
+
+    /// Las columnas de un Node: son todas de ancho fijo y suman más que una
+    /// ventana angosta, que es donde se rompía.
+    const NODE: &[f32] = &[280.0, 110.0, 130.0, 110.0, 130.0, 70.0];
+
+    #[test]
+    fn con_espacio_de_sobra_respeta_los_anchos_pedidos() {
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), 2000.0, 8.0);
+        assert!(!scroll);
+        assert_eq!(anchos, NODE);
+    }
+
+    #[test]
+    fn al_achicarse_encoge_en_vez_de_scrollear() {
+        let disponible = 750.0;
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), disponible, 8.0);
+        assert!(!scroll, "todavía entra encogiendo, no hay que scrollear");
+        let total: f32 = anchos.iter().sum::<f32>() + 8.0 * NODE.len() as f32;
+        assert!(
+            total <= disponible + 0.5,
+            "la tabla sigue desbordando: {total} > {disponible}"
+        );
+        // La columna del nombre cede más que las chicas, pero no baja del piso.
+        assert!(anchos[0] >= ANCHO_MIN_NOMBRE);
+        assert!(anchos[0] < NODE[0]);
+        assert!(anchos.iter().skip(1).all(|w| *w >= ANCHO_MIN_COL));
+    }
+
+    #[test]
+    fn si_ni_encogidas_entran_avisa_que_hay_que_scrollear() {
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), 200.0, 8.0);
+        assert!(scroll);
+        assert_eq!(anchos[0], ANCHO_MIN_NOMBRE);
+        assert!(anchos.iter().skip(1).all(|w| *w == ANCHO_MIN_COL));
+    }
+
+    #[test]
+    fn nunca_devuelve_anchos_negativos_ni_nan() {
+        for d in [0.0, 1.0, 50.0, 300.0, 900.0, 5000.0] {
+            let (anchos, _) = repartir_anchos(&cols(NODE), d, 8.0);
+            assert!(
+                anchos.iter().all(|w| w.is_finite() && *w > 0.0),
+                "ancho inválido con disponible={d}: {anchos:?}"
+            );
+        }
     }
 }

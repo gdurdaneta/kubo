@@ -14,11 +14,11 @@ fn tiene_mapa(kind: &str) -> bool {
     )
 }
 
-pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
-    // Clava el ancho del contenido al del panel. Sin esto un valor largo —una
-    // anotación, un chip— le pide más espacio del que hay y el panel entero se
-    // desalinea en vez de recortar ese valor.
-    ui.set_max_width(ui.available_width());
+pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &mut Accion) {
+    // Clava el contenido al ancho que eligió el panel. Leer `available_width`
+    // no sirve: durante la pasada de medición no está acotado, y el contenido
+    // terminaba maquetado más ancho que el panel.
+    ui.set_max_width(ancho);
 
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
@@ -707,9 +707,12 @@ fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
     if valor.is_empty() {
         return;
     }
+    // La columna de claves era fija en 150 px: en un panel angosto se comía
+    // todo el ancho y los valores quedaban afuera.
+    let ancho_clave = (ui.available_width() * 0.38).clamp(70.0, 150.0);
     ui.horizontal_top(|ui| {
         ui.add_sized(
-            [150.0, 16.0],
+            [ancho_clave, 16.0],
             egui::Label::new(
                 egui::RichText::new(clave)
                     .size(12.0)
@@ -717,28 +720,65 @@ fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
             )
             .truncate(),
         );
-        // `.wrap()` explícito: heredar el wrap del estilo no alcanzaba dentro
-        // de un layout horizontal y los valores largos salían cortados.
-        ui.add(egui::Label::new(egui::RichText::new(valor).size(12.0)).wrap());
+        // El valor va en su propio hueco de ancho conocido. Ni heredar el wrap
+        // del estilo ni `.wrap()` alcanzaban: dentro de un layout horizontal el
+        // label tomaba su ancho natural y los valores largos salían cortados.
+        let resto = ui.available_width().max(40.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(resto, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_max_width(resto);
+                // Truncado y no envuelto: envolver corta en espacios, y estos
+                // valores no los tienen (`unix:///var/run/...`, un JSON), así
+                // que se desbordaban del panel. El valor entero va en el
+                // tooltip y el clic lo copia.
+                let resp = ui
+                    .add(
+                        egui::Label::new(egui::RichText::new(valor).size(12.0))
+                            .truncate()
+                            .sense(egui::Sense::click()),
+                    )
+                    .on_hover_text(valor);
+                if resp.clicked() {
+                    ui.ctx().copy_text(valor.to_string());
+                }
+            },
+        );
     });
 }
 
 fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
-    let ancho = ui.available_width();
+    // Dentro de un hueco de ancho exacto. Si la fila desborda, egui agranda el
+    // `max_rect` del ui padre y todo lo que se dibuja después —las anotaciones,
+    // las conditions— se maqueta más ancho que el panel y sale cortado.
+    let ancho = ui.available_width().max(60.0);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ancho, 0.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.set_max_width(ancho);
+            chips_fila(ui, ancho, mapa);
+        },
+    );
+}
+
+fn chips_fila(
+    ui: &mut egui::Ui,
+    ancho: f32,
+    mapa: &std::collections::BTreeMap<String, String>,
+) {
     ui.horizontal_wrapped(|ui| {
-        ui.set_max_width(ancho);
         for (k, v) in mapa {
             egui::Frame::new()
                 .fill(theme::PANEL_ALT)
                 .corner_radius(3)
                 .inner_margin(egui::Margin::symmetric(5, 2))
                 .show(ui, |ui| {
-                    // Sin truncar, para que `horizontal_wrapped` conozca el
-                    // ancho real de cada chip y pase de fila cuando toca;
-                    // truncados todos reportan lo mínimo y se apretaban en una
-                    // sola línea. El tope de ancho hace que una etiqueta
-                    // enorme se parta adentro de su caja en vez de desbordar.
-                    ui.set_max_width(ancho - 24.0);
+                    // Ancho natural para que la fila sepa cuándo pasar de
+                    // línea, pero con tope: una etiqueta enorme se parte
+                    // adentro de su caja en vez de desbordar la fila.
+                    ui.set_max_width((ancho - 24.0).max(60.0));
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(format!("{k}={v}"))

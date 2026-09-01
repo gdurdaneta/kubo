@@ -84,7 +84,9 @@ fn pane_de(a: &Accion) -> Option<u64> {
 }
 
 /// Lo que se le reserva a la tabla cuando el detalle está abierto.
-const ANCHO_MIN_TABLA: f32 = 260.0;
+const ANCHO_MIN_TABLA: f32 = 180.0;
+/// Menos que esto el detalle no se lee.
+const ANCHO_MIN_DETALLE: f32 = 280.0;
 
 fn marco(fondo: egui::Color32, margen: i8) -> egui::Frame {
     egui::Frame::new().fill(fondo).inner_margin(margen)
@@ -417,31 +419,80 @@ fn dibujar_pane(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accio
         .find(|p| p.id == id)
         .map(|p| p.detalle.is_some())
         .unwrap_or(false);
-    if hay_detalle {
-        // El tope se calcula contra el espacio real del panel, no fijo. Con un
-        // tope mayor al disponible, egui recorta el panel a lo que entra pero
-        // le da al contenido el ancho pedido: queda cortado por los dos lados
-        // (se veía con un Node, cuyas anotaciones son larguísimas).
-        let disponible = ui.available_width();
-        let max_detalle = (disponible - ANCHO_MIN_TABLA).clamp(280.0, 900.0);
-        egui::Panel::right(egui::Id::new(("detalle", id)))
-            .resizable(true)
-            .default_size(430.0_f32.min(max_detalle))
-            .size_range(280.0_f32.min(max_detalle)..=max_detalle)
-            .frame(marco(theme::PANEL, 8))
-            .show(ui, |ui| detail::dibujar(app, ui, id, accion));
-    }
-
     let local = app
         .panes
         .iter()
         .find(|p| p.id == id)
         .and_then(|p| p.vista_local);
+
+    // Tabla y detalle se reparten el área central a mano, en vez de usar un
+    // `Panel::right`.
+    //
+    // egui maqueta el contenido de un panel lateral con el ancho
+    // `size_range.max` y recién después lo recorta al ancho real, que sale de
+    // un estado guardado. Cuando los dos no coinciden —pasa apenas cambia el
+    // tamaño de la ventana— el contenido queda arrancando a la izquierda del
+    // panel visible: se veía media palabra de cada línea. Partiendo el espacio
+    // acá los dos anchos son el mismo por construcción.
     egui::CentralPanel::no_frame()
         .frame(marco(theme::FONDO, 0))
-        .show(ui, |ui| match local {
-            Some(crate::nav::VistaLocal::PortForwards) => forward::vista(app, ui, id, accion),
-            None => table::dibujar(app, ui, id, accion),
+        .show(ui, |ui| {
+            let total = ui.available_width();
+            let alto = ui.available_height();
+            let sep = ui.spacing().item_spacing.x;
+            // En una ventana angosta no entran los dos cómodos. Antes de dejar
+            // el detalle inservible se prefiere apretar la tabla, que además
+            // sabe scrollear a lo ancho.
+            let ancho_detalle = if hay_detalle {
+                (total * 0.45)
+                    .clamp(ANCHO_MIN_DETALLE, 620.0)
+                    .min((total - ANCHO_MIN_TABLA - sep).max(ANCHO_MIN_DETALLE))
+                    .min(total - sep)
+                    .max(0.0)
+            } else {
+                0.0
+            };
+            let ancho_tabla = (total - ancho_detalle - if hay_detalle { sep } else { 0.0 }).max(0.0);
+
+            ui.horizontal_top(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ancho_tabla, alto),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_min_size(egui::vec2(ancho_tabla, alto));
+                        ui.set_max_width(ancho_tabla);
+                        ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                        match local {
+                            Some(crate::nav::VistaLocal::PortForwards) => {
+                                forward::vista(app, ui, id, accion)
+                            }
+                            None => table::dibujar(app, ui, id, accion),
+                        }
+                    },
+                );
+
+                if hay_detalle && ancho_detalle > 0.0 {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ancho_detalle, alto),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.set_min_size(egui::vec2(ancho_detalle, alto));
+                            ui.set_max_width(ancho_detalle);
+                            // Red de seguridad: si algún widget se mide mal, se
+                            // recorta acá en vez de pintar encima de la tabla.
+                            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                            egui::Frame::new()
+                                .fill(theme::PANEL)
+                                .inner_margin(8)
+                                .show(ui, |ui| {
+                                    ui.set_min_size(egui::vec2(ancho_detalle - 16.0, alto - 16.0));
+                                    ui.set_max_width(ancho_detalle - 16.0);
+                                    detail::dibujar(app, ui, id, ancho_detalle - 16.0, accion);
+                                });
+                        },
+                    );
+                }
+            });
         });
 }
 
