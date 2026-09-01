@@ -101,15 +101,11 @@ Variables de entorno para probar sin clickear: `KUBO_TEST_SHELL=ns/pod`
 
 ## Publicar una versión
 
-El código es privado; los binarios se publican en
-[kubo-releases](https://github.com/gdurdaneta/kubo-releases), que es
-público. Ese repo clona este con una deploy key de solo lectura, compila
-los tres sistemas y publica ahí la release — el código nunca queda en el
-repo público.
-
 ```sh
 ./publicar.sh v0.2.0 "qué cambió"
 ```
 
-`dist.sh` compila el binario de Linux localmente en un contenedor con
-glibc viejo, por si querés uno sin pasar por CI.
+El push del tag dispara el workflow, que compila los tres sistemas, ejecuta
+cada binario en su plataforma y publica la release. `dist.sh` compila el de
+Linux localmente en un contenedor con glibc viejo, por si querés uno sin
+pasar por CI.

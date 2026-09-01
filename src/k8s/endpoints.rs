@@ -327,8 +327,8 @@ mod tests {
         let o = obj(serde_json::json!({
             "apiVersion": "discovery.k8s.io/v1", "kind": "EndpointSlice",
             "metadata": {
-                "name": "agent-ops-abcde", "namespace": "microservices",
-                "labels": { "kubernetes.io/service-name": "agent-ops" }
+                "name": "api-abcde", "namespace": "produccion",
+                "labels": { "kubernetes.io/service-name": "api" }
             },
             "endpoints": [
                 { "addresses": ["10.0.0.1", "10.0.0.2"], "conditions": { "ready": true } },
@@ -338,7 +338,7 @@ mod tests {
             ]
         }));
         let (clave, c) = leer(&o, true).expect("se lee el slice");
-        assert_eq!(clave, "microservices/agent-ops");
+        assert_eq!(clave, "produccion/api");
         assert_eq!(c, Conteo { listos: 3, total: 4 });
     }
 
