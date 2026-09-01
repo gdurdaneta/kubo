@@ -151,9 +151,15 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
     }
     forward::dialogo(app, ui.ctx(), &mut accion);
 
+    // Un modal que pide una decisión (confirmar una acción destructiva,
+    // configurar un forward) se queda con el teclado: abrir otro panel o el
+    // selector de cluster por encima solo confunde.
+    let modal_abierto = app.confirm.is_some() || app.dialogo_pf.is_some();
+
     // Ctrl+T abre otro panel. Se consume después de dibujar los paneles, así
     // que si la shell embebida tiene el foco la tecla es suya y no llega acá.
-    if ui
+    if !modal_abierto
+        && ui
         .ctx()
         .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T))
     {
@@ -170,9 +176,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
         (egui::Key::P, crate::app::PickerModo::Contexto),
         (egui::Key::N, crate::app::PickerModo::Namespace),
     ] {
-        if ui
-            .ctx()
-            .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, tecla))
+        if !modal_abierto
+            && ui
+                .ctx()
+                .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, tecla))
         {
             match app.picker.as_ref().map(|p| p.modo) {
                 // La misma tecla otra vez cierra; la otra cambia de modo.

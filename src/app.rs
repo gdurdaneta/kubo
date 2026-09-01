@@ -473,6 +473,7 @@ impl App {
             let mut pane = self.panes.remove(pos);
             pane.limpiar_vista();
         }
+        self.soltar_clusters_sin_uso();
         self.guardar_layout();
     }
 
@@ -559,7 +560,24 @@ impl App {
         }
         self.asegurar_cluster(&contexto);
         self.autoseleccionar(pane_id);
+        self.soltar_clusters_sin_uso();
         self.guardar_layout();
+    }
+
+    /// Descarta las conexiones que ya no mira ningún panel.
+    ///
+    /// Cada `Cluster` retiene un cliente HTTP con su pool; ir y volver entre
+    /// contextos los iba acumulando para toda la sesión.
+    fn soltar_clusters_sin_uso(&mut self) {
+        let en_uso: HashSet<&str> = self
+            .panes
+            .iter()
+            .filter_map(|p| p.contexto.as_deref())
+            .collect();
+        // Un forward vivo sigue usando su cliente aunque el panel ya no esté.
+        let con_forward: HashSet<&str> = self.forwards.iter().map(|f| f.contexto.as_str()).collect();
+        self.clusters
+            .retain(|k, _| en_uso.contains(k.as_str()) || con_forward.contains(k.as_str()));
     }
 
     /// Abre Pods si el panel no tiene nada seleccionado y su cluster ya está.
@@ -604,6 +622,12 @@ impl App {
     // -------------------------------------------------------------- vistas
 
     pub fn seleccionar(&mut self, pane_id: u64, item: NavItem) {
+        self.seleccionar_con(pane_id, item, false);
+    }
+
+    /// `forzar` salta la optimización de "misma vista": lo usa el botón de
+    /// recargar, que justamente quiere volver a listar contra el API server.
+    fn seleccionar_con(&mut self, pane_id: u64, item: NavItem, forzar: bool) {
         let token = self.token();
         let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
             return;
@@ -625,7 +649,8 @@ impl App {
         // Volver a pedir la misma vista (pasa al navegar desde el mapa o la
         // paleta a un recurso del kind que ya se está mirando) costaría un
         // listado completo contra el API server para llegar a lo mismo.
-        let misma_vista = pane.item.as_ref().map(|i| i.res.key()) == Some(item.res.key())
+        let misma_vista = !forzar
+            && pane.item.as_ref().map(|i| i.res.key()) == Some(item.res.key())
             && pane.watch_target.as_ref() == Some(&target)
             && pane.watch_tarea.as_ref().is_some_and(|t| !t.is_finished())
             && pane.store.is_some();
@@ -729,10 +754,12 @@ impl App {
         self.guardar_layout();
     }
 
+    /// Vuelve a listar desde cero. Sin `forzar`, la guarda de "misma vista"
+    /// hacía que el botón de recargar no hiciera nada.
     pub fn refrescar(&mut self, pane_id: u64) {
         if let Some(pane) = self.pane(pane_id) {
             if let Some(item) = pane.item.clone() {
-                self.seleccionar(pane_id, item);
+                self.seleccionar_con(pane_id, item, true);
             }
         }
     }
