@@ -98,3 +98,18 @@ Variables de entorno para probar sin clickear: `KUBO_TEST_SHELL=ns/pod`
 - Métricas de CPU/memoria vía metrics-server.
 - `port-forward`.
 - Drag para reordenar paneles; layouts guardados.
+
+## Publicar una versión
+
+El código es privado; los binarios se publican en
+[kubo-releases](https://github.com/gdurdaneta/kubo-releases), que es
+público. Ese repo clona este con una deploy key de solo lectura, compila
+los tres sistemas y publica ahí la release — el código nunca queda en el
+repo público.
+
+```sh
+./publicar.sh v0.2.0 "qué cambió"
+```
+
+`dist.sh` compila el binario de Linux localmente en un contenedor con
+glibc viejo, por si querés uno sin pasar por CI.
