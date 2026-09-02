@@ -156,6 +156,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     // los endpoints llegaban antes que las filas, la columna quedaba en `—`
     // para siempre, porque el watch solo reenvía cuando algo cambia.
     let endpoints = columns::tiene_endpoints(&kind).then_some(&pane.endpoints);
+    let metricas = columns::tiene_metricas(&kind).then_some(&pane.metricas);
     // Ya se resolvió arriba, antes de prestar el store mutablemente.
     let permisos = permisos.as_ref();
     let col_estado = columns::indice_estado(&kind, mostrar_ns);
@@ -267,13 +268,13 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
                 ui.set_min_width(ancho_pedido);
                 cuerpo(
                     ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints,
-                    permisos, cursor, mover != 0, &mut clic_en, accion,
+                    metricas, permisos, cursor, mover != 0, &mut clic_en, accion,
                 );
             });
     } else {
         cuerpo(
-            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, permisos,
-            cursor, mover != 0, &mut clic_en, accion,
+            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, metricas,
+            permisos, cursor, mover != 0, &mut clic_en, accion,
         );
     }
 
@@ -294,6 +295,7 @@ fn cuerpo(
     kind: &str,
     pane_id: u64,
     endpoints: Option<&std::collections::HashMap<String, crate::k8s::endpoints::Conteo>>,
+    metricas: Option<&std::collections::HashMap<String, crate::k8s::metricas::Uso>>,
     permisos: Option<&crate::k8s::permisos::Permisos>,
     cursor: Option<usize>,
     seguir_cursor: bool,
@@ -371,6 +373,16 @@ fn cuerpo(
                 }
                 if let Some(eps) = endpoints {
                     row.col(|ui| celda_endpoints(ui, eps.get(&key)));
+                }
+                if let Some(ms) = metricas {
+                    // Para un nodo el número solo no dice mucho: se muestra
+                    // contra lo asignable.
+                    let asignable = (kind == "Node")
+                        .then(|| store.objeto(&key).and_then(asignable_de))
+                        .flatten();
+                    let uso = ms.get(&key).copied();
+                    row.col(|ui| celda_cpu(ui, uso, asignable));
+                    row.col(|ui| celda_mem(ui, uso, asignable));
                 }
                 row.col(|ui| {
                     ui.colored_label(theme::TEXTO_TENUE, columns::edad(creado));
@@ -478,6 +490,70 @@ fn selector_estado(ui: &mut egui::Ui, store: &mut crate::store::Store, id: u64) 
     if let Some(f) = nuevo {
         store.set_filtro_estado(f);
         ui.ctx().request_repaint();
+    }
+}
+
+/// CPU y memoria asignables de un Node, para mostrar el uso como porcentaje.
+fn asignable_de(o: &kube::api::DynamicObject) -> Option<crate::k8s::metricas::Uso> {
+    use crate::k8s::metricas::{parse_cpu, parse_mem, Uso};
+    let a = o.data.get("status")?.get("allocatable")?;
+    Some(Uso {
+        cpu_m: a.get("cpu").and_then(|v| v.as_str()).and_then(parse_cpu)?,
+        mem_bytes: a.get("memory").and_then(|v| v.as_str()).and_then(parse_mem)?,
+    })
+}
+
+fn color_por_porcentaje(p: f64) -> egui::Color32 {
+    if p >= 90.0 {
+        theme::BAD
+    } else if p >= 70.0 {
+        theme::WARN
+    } else {
+        theme::TEXTO
+    }
+}
+
+fn celda_cpu(
+    ui: &mut egui::Ui,
+    uso: Option<crate::k8s::metricas::Uso>,
+    asignable: Option<crate::k8s::metricas::Uso>,
+) {
+    let Some(u) = uso else {
+        ui.colored_label(theme::TEXTO_TENUE, "—");
+        return;
+    };
+    let texto = crate::k8s::metricas::fmt_cpu(u.cpu_m);
+    match asignable.filter(|a| a.cpu_m > 0) {
+        Some(a) => {
+            let p = u.cpu_m as f64 * 100.0 / a.cpu_m as f64;
+            ui.colored_label(color_por_porcentaje(p), format!("{p:.0}%"))
+                .on_hover_text(format!("{texto} de {}", crate::k8s::metricas::fmt_cpu(a.cpu_m)));
+        }
+        None => {
+            ui.label(texto);
+        }
+    }
+}
+
+fn celda_mem(
+    ui: &mut egui::Ui,
+    uso: Option<crate::k8s::metricas::Uso>,
+    asignable: Option<crate::k8s::metricas::Uso>,
+) {
+    let Some(u) = uso else {
+        ui.colored_label(theme::TEXTO_TENUE, "—");
+        return;
+    };
+    let texto = crate::k8s::metricas::fmt_mem(u.mem_bytes);
+    match asignable.filter(|a| a.mem_bytes > 0) {
+        Some(a) => {
+            let p = u.mem_bytes as f64 * 100.0 / a.mem_bytes as f64;
+            ui.colored_label(color_por_porcentaje(p), format!("{p:.0}%"))
+                .on_hover_text(format!("{texto} de {}", crate::k8s::metricas::fmt_mem(a.mem_bytes)));
+        }
+        None => {
+            ui.label(texto);
+        }
     }
 }
 

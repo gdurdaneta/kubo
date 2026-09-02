@@ -16,6 +16,10 @@ Rust + [egui](https://github.com/emilk/egui) sobre wgpu (Vulkan) y
   operador de RabbitMQ, aparecen como secciones propias del sidebar (Gateway
   API y MetalLB anidados dentro de Network, como en Lens). La detección es por
   grupos de API, así que solo se ofrece lo realmente instalado.
+- **Métricas**: CPU y memoria en Pods y Nodes desde `metrics.k8s.io`, con
+  porcentaje sobre lo asignable en los nodos y un sparkline de los últimos
+  10 minutos en el detalle. Si el cluster no tiene metrics-server, las
+  columnas no aparecen.
 - **Tablas en vivo**: cada vista es un `watch` del API server, no un polling.
   Virtualizadas — se dibujan solo las filas visibles.
 - **Columnas por Kind**: Pods, Deployments, Services, Nodes, PVCs, Ingresses,

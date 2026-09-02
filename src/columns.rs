@@ -174,8 +174,18 @@ pub fn headers(kind: &str, mostrar_ns: bool) -> Vec<ColSpec> {
     if kind == "Service" {
         v.push(col("Endpoints", 100.0));
     }
+    // Igual que los endpoints: vienen de otra API y cambian solos.
+    if tiene_metricas(kind) {
+        v.push(col("CPU", 80.0));
+        v.push(col("Mem", 90.0));
+    }
     v.push(col("Edad", 70.0));
     v
+}
+
+/// Kinds con columnas de CPU/memoria desde metrics.k8s.io.
+pub fn tiene_metricas(kind: &str) -> bool {
+    matches!(kind, "Pod" | "Node")
 }
 
 /// Índice de la columna que hace de "estado" para este Kind, si tiene una.

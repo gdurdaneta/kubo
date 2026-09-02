@@ -143,6 +143,12 @@ pub struct Pane {
     pub endpoints: HashMap<String, k8s::endpoints::Conteo>,
     pub endpoints_token: u64,
     pub endpoints_tarea: Option<JoinHandle<()>>,
+    /// Última muestra de CPU/memoria por objeto, en Pods y Nodes.
+    pub metricas: HashMap<String, k8s::metricas::Uso>,
+    /// Muestras anteriores, para el sparkline del detalle.
+    pub historial: k8s::metricas::Historial,
+    pub metricas_token: u64,
+    pub metricas_tarea: Option<JoinHandle<()>>,
     /// Ámbito del watch en curso, para no relistar si no cambió nada.
     pub watch_target: Option<Target>,
     pub detalle: Option<Detalle>,
@@ -175,6 +181,10 @@ impl Pane {
             endpoints: HashMap::new(),
             endpoints_token: 0,
             endpoints_tarea: None,
+            metricas: HashMap::new(),
+            historial: k8s::metricas::Historial::default(),
+            metricas_token: 0,
+            metricas_tarea: None,
             watch_target: None,
             detalle: None,
             detalle_tareas: Vec::new(),
@@ -189,6 +199,7 @@ impl Pane {
             t.abort();
         }
         self.parar_endpoints();
+        self.parar_metricas();
         for t in self.detalle_tareas.drain(..) {
             t.abort();
         }
@@ -208,6 +219,15 @@ impl Pane {
         }
         self.endpoints.clear();
         self.endpoints_token = 0;
+    }
+
+    fn parar_metricas(&mut self) {
+        if let Some(t) = self.metricas_tarea.take() {
+            t.abort();
+        }
+        self.metricas.clear();
+        self.historial = k8s::metricas::Historial::default();
+        self.metricas_token = 0;
     }
 
     pub fn cerrar_bottom(&mut self) {
@@ -697,10 +717,13 @@ impl App {
 
         let mostrar_ns = item.res.namespaced && pane.ns_sel.is_none();
         let es_service = item.res.ar.kind == "Service" && item.res.ar.group.is_empty();
+        let con_metricas =
+            item.res.ar.group.is_empty() && matches!(item.res.ar.kind.as_str(), "Pod" | "Node");
         pane.store = Some(Store::new(item.res.ar.kind.clone(), mostrar_ns));
         pane.watch_token = token;
 
         pane.parar_endpoints();
+        pane.parar_metricas();
         pane.watch_target = Some(target.clone());
         let ar = item.res.ar.clone();
         let namespaced = item.res.namespaced;
@@ -712,6 +735,9 @@ impl App {
         self.consultar_permisos(pane_id);
         if es_service {
             self.seguir_endpoints(pane_id);
+        }
+        if con_metricas {
+            self.sondear_metricas(pane_id);
         }
         self.guardar_layout();
     }
@@ -773,6 +799,39 @@ impl App {
         let ns = item.res.namespaced.then(|| pane.ns_sel.clone()).flatten();
         let clave = k8s::permisos::clave(&ar, ns.as_deref());
         self.cluster_de(pane)?.permisos.get(&clave)
+    }
+
+    /// Sondeo de `metrics.k8s.io` para las columnas de CPU/memoria. Solo si el
+    /// cluster lo sirve: sin metrics-server las columnas no aparecen.
+    fn sondear_metricas(&mut self, pane_id: u64) {
+        let token = self.token();
+        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
+            return;
+        };
+        let Some(cluster) = self.cluster_de(pane) else { return };
+        let kind = pane.item.as_ref().map(|i| i.res.ar.kind.clone()).unwrap_or_default();
+        let sirve = |k: &str| {
+            cluster
+                .info
+                .as_ref()
+                .is_some_and(|i| i.resources.iter().any(|r| r.ar.kind == k && r.ar.group == "metrics.k8s.io"))
+        };
+        let ar = match kind.as_str() {
+            "Pod" if sirve("PodMetrics") => k8s::metricas::ar_pods(),
+            "Node" if sirve("NodeMetrics") => k8s::metricas::ar_nodes(),
+            _ => return,
+        };
+        let Some(target) = pane.watch_target.clone() else { return };
+        let bridge = self.bridge.clone();
+        let rt = &self.rt;
+        let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
+            return;
+        };
+        pane.metricas_token = token;
+        pane.metricas_tarea = Some(rt.spawn(async move {
+            k8s::metricas::sondear(client, ar, target, token, bridge).await;
+        }));
     }
 
     /// Watch auxiliar de endpoints, para la columna de backends de Services.
@@ -1528,6 +1587,15 @@ impl App {
             }
         }
 
+        // KUBO_TEST_NAV=0 — oculta el sidebar, para capturas de la tabla en
+        // ventanas angostas.
+        if std::env::var("KUBO_TEST_NAV").is_ok_and(|v| v == "0") {
+            std::env::set_var("KUBO_TEST_NAV", "");
+            if let Some(p) = self.pane(pane_id) {
+                p.nav_visible = false;
+            }
+        }
+
         // KUBO_TEST_VISTA=auditoria|forwards — abre una vista local.
         if let Ok(v) = std::env::var("KUBO_TEST_VISTA") {
             if !v.is_empty() {
@@ -1725,6 +1793,12 @@ impl App {
                             return;
                         }
                     }
+                }
+            }
+            K8sEvent::Metricas { token, mapa } => {
+                if let Some(p) = self.panes.iter_mut().find(|p| p.metricas_token == token) {
+                    p.historial.agregar(&mapa);
+                    p.metricas = mapa;
                 }
             }
             K8sEvent::Endpoints { token, mapa } => {

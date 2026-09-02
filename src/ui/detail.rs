@@ -123,6 +123,13 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
     let eventos_pedidos = det.eventos_pedidos;
     let backends_lista = det.backends.clone();
     let backends_pedidos = det.backends_pedidos;
+    // Historial de métricas del objeto abierto (Pods y Nodes), para el sparkline.
+    let historial: Vec<crate::k8s::metricas::Uso> = pane
+        .historial
+        .por_clave
+        .get(&key)
+        .map(|h| h.iter().copied().collect())
+        .unwrap_or_default();
 
     match tab {
         TabDetalle::Yaml => {
@@ -297,7 +304,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     TabDetalle::Resumen => {
                         if obj_existe {
                             let obj = pane.store.as_ref().and_then(|s| s.objeto(&key)).unwrap();
-                            resumen(ui, &kind, obj);
+                            resumen(ui, &kind, obj, &historial);
                             if kind == "Service" {
                                 backends(
                                     ui,
@@ -362,7 +369,12 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
     }
 }
 
-fn resumen(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject) {
+fn resumen(
+    ui: &mut egui::Ui,
+    kind: &str,
+    o: &kube::api::DynamicObject,
+    historial: &[crate::k8s::metricas::Uso],
+) {
     seccion(ui, "Metadata", |ui| {
         campo(ui, "Nombre", &kube::ResourceExt::name_any(o));
         if let Some(ns) = kube::ResourceExt::namespace(o) {
@@ -382,6 +394,12 @@ fn resumen(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject) {
             campo(ui, "Controlado por", &format!("{}/{}", dueño.kind, dueño.name));
         }
     });
+
+    // El uso actual es lo primero que uno busca en un pod o un nodo: va antes
+    // que labels y anotaciones, que empujan todo hacia abajo.
+    if crate::columns::tiene_metricas(kind) {
+        uso_recursos(ui, kind, o, historial);
+    }
 
     let labels = kube::ResourceExt::labels(o);
     if !labels.is_empty() {
@@ -445,6 +463,183 @@ fn resumen(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject) {
             }
         });
     }
+}
+
+/// CPU y memoria en el tiempo, desde metrics.k8s.io.
+fn uso_recursos(
+    ui: &mut egui::Ui,
+    kind: &str,
+    o: &kube::api::DynamicObject,
+    historial: &[crate::k8s::metricas::Uso],
+) {
+    use crate::k8s::metricas::{fmt_cpu, fmt_mem, parse_cpu, parse_mem, HISTORIAL, INTERVALO_S};
+
+    seccion(ui, "Uso", |ui| {
+        let Some(ultimo) = historial.last() else {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.colored_label(theme::TEXTO_TENUE, "esperando la primera muestra de metrics-server…");
+            });
+            return;
+        };
+
+        // Tope del gráfico: para un Node lo asignable, para un Pod el límite
+        // del contenedor si lo declara. Sin tope, el máximo de la serie.
+        let (tope_cpu, tope_mem) = if kind == "Node" {
+            let a = o.data.get("status").and_then(|s| s.get("allocatable"));
+            (
+                a.and_then(|a| a.get("cpu")).and_then(|v| v.as_str()).and_then(parse_cpu),
+                a.and_then(|a| a.get("memory")).and_then(|v| v.as_str()).and_then(parse_mem),
+            )
+        } else {
+            limites_del_pod(o)
+        };
+
+        let ancho = ui.available_width();
+        let mitad = ((ancho - 12.0) / 2.0).max(80.0);
+        ui.horizontal_top(|ui| {
+            sparkline(
+                ui,
+                mitad,
+                "CPU",
+                &historial.iter().map(|u| u.cpu_m as f64).collect::<Vec<_>>(),
+                tope_cpu.map(|t| t as f64),
+                &fmt_cpu(ultimo.cpu_m),
+                tope_cpu.map(fmt_cpu),
+                theme::ACENTO,
+            );
+            ui.add_space(12.0);
+            sparkline(
+                ui,
+                mitad,
+                "Memoria",
+                &historial.iter().map(|u| u.mem_bytes as f64).collect::<Vec<_>>(),
+                tope_mem.map(|t| t as f64),
+                &fmt_mem(ultimo.mem_bytes),
+                tope_mem.map(fmt_mem),
+                theme::OK,
+            );
+        });
+        ui.colored_label(
+            theme::TEXTO_TENUE,
+            format!(
+                "últimos {} min, una muestra cada {INTERVALO_S} s",
+                HISTORIAL as u64 * INTERVALO_S / 60
+            ),
+        );
+    });
+}
+
+/// Suma de los límites de CPU y memoria de los contenedores del pod, si todos
+/// los declaran. Con uno solo sin límite el total no significa nada.
+fn limites_del_pod(o: &kube::api::DynamicObject) -> (Option<u64>, Option<u64>) {
+    use crate::k8s::metricas::{parse_cpu, parse_mem};
+    let Some(cs) = o
+        .data
+        .get("spec")
+        .and_then(|s| s.get("containers"))
+        .and_then(|c| c.as_array())
+    else {
+        return (None, None);
+    };
+    let mut cpu = Some(0u64);
+    let mut mem = Some(0u64);
+    for c in cs {
+        let l = c.get("resources").and_then(|r| r.get("limits"));
+        match l.and_then(|l| l.get("cpu")).and_then(|v| v.as_str()).and_then(parse_cpu) {
+            Some(v) => cpu = cpu.map(|t| t + v),
+            None => cpu = None,
+        }
+        match l.and_then(|l| l.get("memory")).and_then(|v| v.as_str()).and_then(parse_mem) {
+            Some(v) => mem = mem.map(|t| t + v),
+            None => mem = None,
+        }
+    }
+    (cpu.filter(|v| *v > 0), mem.filter(|v| *v > 0))
+}
+
+/// Serie temporal chica: línea sobre fondo, con el valor actual y el tope.
+#[allow(clippy::too_many_arguments)]
+fn sparkline(
+    ui: &mut egui::Ui,
+    ancho: f32,
+    titulo: &str,
+    valores: &[f64],
+    tope: Option<f64>,
+    actual: &str,
+    tope_texto: Option<String>,
+    color: egui::Color32,
+) {
+    ui.vertical(|ui| {
+        ui.set_width(ancho);
+        ui.horizontal(|ui| {
+            ui.colored_label(theme::TEXTO_TENUE, titulo);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                match &tope_texto {
+                    Some(t) => {
+                        ui.colored_label(theme::TEXTO_TENUE, format!("/ {t}"));
+                        ui.label(egui::RichText::new(actual).strong());
+                    }
+                    None => {
+                        ui.label(egui::RichText::new(actual).strong());
+                    }
+                }
+            });
+        });
+
+        let alto = 42.0;
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(ancho, alto), egui::Sense::hover());
+        let p = ui.painter_at(rect);
+        p.rect_filled(rect, 3.0, theme::PANEL_ALT);
+
+        if valores.is_empty() {
+            return;
+        }
+        // La escala es el tope si lo hay, si no el máximo de la serie; nunca
+        // cero, para no dividir por él con una serie plana en 0.
+        let max_serie = valores.iter().cloned().fold(0.0_f64, f64::max);
+        let escala = tope.unwrap_or(max_serie).max(max_serie).max(1.0);
+
+        // La serie se dibuja pegada a la derecha: lo último es lo que importa,
+        // y así el gráfico "avanza" a medida que llegan muestras.
+        let n = crate::k8s::metricas::HISTORIAL.max(2) as f32;
+        let paso = (rect.width() - 8.0) / (n - 1.0);
+        let x0 = rect.right() - 4.0 - paso * (valores.len().saturating_sub(1)) as f32;
+        let puntos: Vec<egui::Pos2> = valores
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let y = rect.bottom() - 4.0 - ((v / escala) as f32) * (rect.height() - 8.0);
+                egui::pos2(x0 + paso * i as f32, y)
+            })
+            .collect();
+
+        // Relleno tenue bajo la línea.
+        if puntos.len() >= 2 {
+            let mut area = puntos.clone();
+            area.push(egui::pos2(puntos.last().unwrap().x, rect.bottom() - 4.0));
+            area.push(egui::pos2(puntos[0].x, rect.bottom() - 4.0));
+            p.add(egui::Shape::convex_polygon(
+                area,
+                color.gamma_multiply(0.15),
+                egui::Stroke::NONE,
+            ));
+            p.add(egui::Shape::line(puntos.clone(), egui::Stroke::new(1.5, color)));
+        }
+        if let Some(ultimo) = puntos.last() {
+            p.circle_filled(*ultimo, 2.5, color);
+        }
+        // Marca del tope, si el actual está lejos de él se ve como referencia.
+        if tope.is_some() {
+            p.line_segment(
+                [
+                    egui::pos2(rect.left() + 4.0, rect.top() + 4.0),
+                    egui::pos2(rect.right() - 4.0, rect.top() + 4.0),
+                ],
+                egui::Stroke::new(1.0, theme::BORDE),
+            );
+        }
+    });
 }
 
 /// Backends detrás del Service: IP, pod y nodo, con el pod clickeable.

@@ -9,6 +9,7 @@ pub mod endpoints;
 pub mod exec;
 pub mod logs;
 pub mod mapa;
+pub mod metricas;
 pub mod permisos;
 pub mod portforward;
 pub mod search;
@@ -149,6 +150,11 @@ pub enum K8sEvent {
     Endpoints {
         token: u64,
         mapa: std::collections::HashMap<String, endpoints::Conteo>,
+    },
+    /// Muestra de CPU/memoria de los objetos de la vista.
+    Metricas {
+        token: u64,
+        mapa: std::collections::HashMap<String, metricas::Uso>,
     },
     /// Qué verbos permite el RBAC sobre el recurso de la vista.
     Permisos {
