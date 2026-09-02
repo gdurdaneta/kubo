@@ -17,6 +17,8 @@ use crate::store::Store;
 /// Tope de líneas en el visor de logs; más que esto no se lee y cuesta memoria.
 const MAX_LINEAS_LOG: usize = 5_000;
 pub const MAX_PANES: usize = 4;
+/// Tope para conectar a un cluster antes de darlo por inalcanzable.
+const TIMEOUT_CONEXION: u64 = 20;
 /// Espera tras la última tecla antes de disparar la búsqueda de la paleta.
 const DEBOUNCE_BUSQUEDA: f32 = 0.25;
 
@@ -500,12 +502,30 @@ impl App {
         let bridge = self.bridge.clone();
         let ctx_name = contexto.to_string();
         self.rt.spawn(async move {
-            let (client, info, desde_cache) = match k8s::session::connect(&ctx_name).await {
-                Ok(v) => v,
-                Err(e) => {
+            // Sin tope, un cluster inalcanzable (VPN caída, endpoint viejo)
+            // dejaba el panel en «Conectando…» hasta que se rindiera el
+            // sistema operativo, minutos después y sin forma de cancelar.
+            let intento = tokio::time::timeout(
+                std::time::Duration::from_secs(TIMEOUT_CONEXION),
+                k8s::session::connect(&ctx_name),
+            )
+            .await;
+            let (client, info, desde_cache) = match intento {
+                Ok(Ok(v)) => v,
+                Ok(Err(e)) => {
                     bridge.send(K8sEvent::ConnectFailed {
                         token,
                         error: format!("{e:#}"),
+                    });
+                    return;
+                }
+                Err(_) => {
+                    bridge.send(K8sEvent::ConnectFailed {
+                        token,
+                        error: format!(
+                            "el cluster no respondió en {TIMEOUT_CONEXION} s. \
+                             ¿Está levantado y tenés red o VPN hacia él?"
+                        ),
                     });
                     return;
                 }

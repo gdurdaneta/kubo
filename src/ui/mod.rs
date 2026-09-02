@@ -128,12 +128,19 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
     // Los paneles se reparten el ancho en partes iguales.
     let n = app.panes.len().max(1);
     let ids: Vec<u64> = app.panes.iter().map(|p| p.id).collect();
+    // Con varios paneles hay que poder ver a cuál le hablan Ctrl+K/P/N: sin
+    // marca, el atajo parecía elegir uno al azar.
+    let activo = app.pane_activo();
     ui.columns(n, |cols| {
         for (i, id) in ids.iter().enumerate() {
             let ui = &mut cols[i];
+            let es_activo = n > 1 && activo == Some(*id);
             egui::Frame::new()
                 .fill(theme::FONDO)
-                .stroke(egui::Stroke::new(1.0, theme::BORDE))
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if es_activo { theme::ACENTO } else { theme::BORDE },
+                ))
                 .show(ui, |ui| {
                     dibujar_pane(app, ui, *id, n, &mut accion);
                 });
