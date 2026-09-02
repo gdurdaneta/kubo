@@ -16,9 +16,14 @@ if [ "${1:-}" = "--quitar" ]; then
   exit 0
 fi
 
-# El binario: el de dist/ si existe (compilado para glibc viejo), si no el local.
-ORIGEN="$RAIZ/dist/kubo"
-[ -x "$ORIGEN" ] || ORIGEN="$RAIZ/target/release/kubo"
+# Por defecto el recién compilado. Antes se prefería el de dist/, que lo genera
+# dist.sh para glibc viejo y no se regenera en cada build: instalaba una versión
+# de días atrás sin decir nada.
+ORIGEN="$RAIZ/target/release/kubo"
+if [ "${1:-}" = "--portable" ]; then
+  ORIGEN="$RAIZ/dist/kubo"
+  [ -x "$ORIGEN" ] || { echo "no hay dist/kubo; corré ./dist.sh primero" >&2; exit 1; }
+fi
 [ -x "$ORIGEN" ] || { echo "no encuentro el binario; corré 'cargo build --release'" >&2; exit 1; }
 
 mkdir -p "$BIN" "$APPS"
@@ -51,7 +56,7 @@ DESKTOP
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
 command -v gtk-update-icon-cache  >/dev/null && gtk-update-icon-cache -qtf "$ICONOS" 2>/dev/null || true
 
-echo "binario:  $BIN/kubo"
+echo "binario:  $BIN/kubo  (de $(date -r "$ORIGEN" '+%d/%m %H:%M'))"
 echo "launcher: $APPS/kubo.desktop"
 case ":$PATH:" in
   *":$BIN:"*) ;;
