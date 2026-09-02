@@ -429,10 +429,12 @@ fn selector_estado(ui: &mut egui::Ui, store: &mut crate::store::Store, id: u64) 
         return;
     }
     let actual = store.filtro_estado().clone();
+    // El combo dice qué columna filtra: en Events es "tipo", no "estado".
+    let etiqueta = columns::titulo_estado(store.kind()).unwrap_or("Estado").to_lowercase();
     let (texto, color) = match &actual {
-        FiltroEstado::Todos => ("estado: todos".to_string(), theme::TEXTO_TENUE),
-        FiltroEstado::Problemas => ("estado: con problemas".to_string(), theme::WARN),
-        FiltroEstado::Valor(v) => (format!("estado: {v}"), theme::ACENTO),
+        FiltroEstado::Todos => (format!("{etiqueta}: todos"), theme::TEXTO_TENUE),
+        FiltroEstado::Problemas => (format!("{etiqueta}: con problemas"), theme::WARN),
+        FiltroEstado::Valor(v) => (format!("{etiqueta}: {v}"), theme::ACENTO),
     };
     let mut nuevo: Option<FiltroEstado> = None;
 

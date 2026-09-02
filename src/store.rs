@@ -29,7 +29,16 @@ pub enum FiltroEstado {
 
 /// Estados que no son un problema. El resto (ImagePullBackOff, CrashLoopBackOff,
 /// Error, Evicted, Pending…) cae en `Problemas` sin tener que enumerarlos.
-const ESTADOS_SANOS: &[&str] = &["Running", "Succeeded", "Completed", "Ready", "Active", "Bound"];
+const ESTADOS_SANOS: &[&str] = &[
+    "Running",
+    "Succeeded",
+    "Completed",
+    "Ready",
+    "Active",
+    "Bound",
+    // Events: lo que no es Normal es Warning.
+    "Normal",
+];
 
 pub fn estado_sano(e: &str) -> bool {
     ESTADOS_SANOS.contains(&e)
@@ -150,6 +159,10 @@ impl Store {
             self.filtro = f.to_string();
             self.dirty = true;
         }
+    }
+
+    pub fn kind(&self) -> &str {
+        &self.kind
     }
 
     pub fn set_col_estado(&mut self, col: Option<usize>) {

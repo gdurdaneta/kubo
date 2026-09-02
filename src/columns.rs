@@ -192,8 +192,18 @@ pub fn tiene_metricas(kind: &str) -> bool {
 ///
 /// Se busca por título en vez de hardcodear posiciones: así sigue andando si
 /// alguien reordena las columnas de un Kind.
+pub fn titulo_estado(kind: &str) -> Option<&'static str> {
+    const TITULOS: &[&str] = &["Estado", "Status", "Fase", "Tipo"];
+    extra_cols(kind)
+        .iter()
+        .find(|c| TITULOS.contains(&c.title))
+        .map(|c| c.title)
+}
+
 pub fn indice_estado(kind: &str, mostrar_ns: bool) -> Option<usize> {
-    const TITULOS: &[&str] = &["Estado", "Status", "Fase"];
+    // "Tipo" es el de Events (Normal/Warning): filtrar por Warning es justo lo
+    // que uno hace al triagear.
+    const TITULOS: &[&str] = &["Estado", "Status", "Fase", "Tipo"];
     let mut i = 1; // Nombre
     if mostrar_ns {
         i += 1;
