@@ -15,6 +15,7 @@ fn tiene_mapa(kind: &str) -> bool {
 }
 
 pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &mut Accion) {
+    let permisos = app.permisos_del_pane(id).cloned();
     // Clava el contenido al ancho que eligió el panel. Leer `available_width`
     // no sirve: durante la pasada de medición no está acotado, y el contenido
     // terminaba maquetado más ancho que el panel.
@@ -42,6 +43,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     &det.key.clone(),
                     det.ns.clone(),
                     det.name.clone(),
+                    permisos.as_ref(),
                     accion,
                 );
             })

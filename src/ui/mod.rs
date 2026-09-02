@@ -3,6 +3,7 @@
 //! Cada panel dibuja y devuelve acciones; el estado se muta después.
 
 mod atajos;
+mod auditoria;
 mod confirm;
 mod detail;
 mod forward;
@@ -479,6 +480,9 @@ fn dibujar_pane(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accio
                         match local {
                             Some(crate::nav::VistaLocal::PortForwards) => {
                                 forward::vista(app, ui, id, accion)
+                            }
+                            Some(crate::nav::VistaLocal::Auditoria) => {
+                                auditoria::vista(app, ui, id, accion)
                             }
                             None => table::dibujar(app, ui, id, accion),
                         }

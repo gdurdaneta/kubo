@@ -38,6 +38,9 @@ pub struct Cluster {
     pub info: Option<ClusterInfo>,
     pub nav: Vec<NavCategory>,
     pub namespaces: Vec<String>,
+    /// Qué permite el RBAC, por (namespace, recurso). Se llena a medida que se
+    /// abren vistas y se comparte entre los paneles del mismo contexto.
+    pub permisos: HashMap<String, k8s::permisos::Permisos>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -131,6 +134,9 @@ pub struct Pane {
     pub vista_local: Option<VistaLocal>,
     pub store: Option<Store>,
     pub busqueda: String,
+    /// Fila resaltada por teclado. Índice sobre la vista filtrada y ordenada,
+    /// así que se re-acota en cada dibujo.
+    pub cursor: Option<usize>,
     pub watch_token: u64,
     pub watch_tarea: Option<JoinHandle<()>>,
     /// Backends por Service (`ns/servicio -> conteo`), solo en la vista Services.
@@ -163,6 +169,7 @@ impl Pane {
             vista_local: None,
             store: None,
             busqueda: String::new(),
+            cursor: None,
             watch_token: 0,
             watch_tarea: None,
             endpoints: HashMap::new(),
@@ -192,6 +199,7 @@ impl Pane {
         self.watch_target = None;
         self.detalle = None;
         self.busqueda.clear();
+        self.cursor = None;
     }
 
     fn parar_endpoints(&mut self) {
@@ -497,6 +505,7 @@ impl App {
                 info: None,
                 nav: Vec::new(),
                 namespaces: Vec::new(),
+                permisos: HashMap::new(),
             },
         );
         let bridge = self.bridge.clone();
@@ -700,6 +709,7 @@ impl App {
             k8s::watch::run(client, ar, namespaced, target, token, bridge).await;
         }));
         pane.item = Some(item);
+        self.consultar_permisos(pane_id);
         if es_service {
             self.seguir_endpoints(pane_id);
         }
@@ -724,6 +734,45 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Pregunta al API server qué verbos permite tu credencial sobre la vista
+    /// recién abierta, para no ofrecer acciones que van a rebotar con un 403.
+    fn consultar_permisos(&mut self, pane_id: u64) {
+        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(ar) = self.ar_del_pane(pane_id) else { return };
+        let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
+            return;
+        };
+        // Un recurso cluster-scoped se consulta sin namespace: preguntar por
+        // «nodes en default» devuelve una respuesta que no es la que aplica.
+        let ns = pane
+            .item
+            .as_ref()
+            .filter(|i| i.res.namespaced)
+            .and_then(|_| pane.ns_sel.clone());
+        let clave = k8s::permisos::clave(&ar, ns.as_deref());
+        // Ya preguntado para este (recurso, namespace).
+        if self
+            .cluster_de(pane)
+            .is_some_and(|c| c.permisos.contains_key(&clave))
+        {
+            return;
+        }
+        let bridge = self.bridge.clone();
+        self.rt.spawn(async move {
+            k8s::permisos::consultar(client, ar, ns, bridge).await;
+        });
+    }
+
+    /// Permisos vigentes para lo que está mirando el panel.
+    pub fn permisos_del_pane(&self, pane_id: u64) -> Option<&k8s::permisos::Permisos> {
+        let pane = self.panes.iter().find(|p| p.id == pane_id)?;
+        let item = pane.item.as_ref()?;
+        let ar = item.res.ar.clone();
+        let ns = item.res.namespaced.then(|| pane.ns_sel.clone()).flatten();
+        let clave = k8s::permisos::clave(&ar, ns.as_deref());
+        self.cluster_de(pane)?.permisos.get(&clave)
     }
 
     /// Watch auxiliar de endpoints, para la columna de backends de Services.
@@ -1272,6 +1321,16 @@ impl App {
             .map(|i| i.res.ar.clone())
     }
 
+    /// Nombre del contexto que mira un panel. Va al registro de auditoría:
+    /// saber qué se tocó sin saber en qué cluster no sirve de nada.
+    fn contexto_del_pane(&self, pane_id: u64) -> String {
+        self.panes
+            .iter()
+            .find(|p| p.id == pane_id)
+            .and_then(|p| p.contexto.clone())
+            .unwrap_or_else(|| "(desconocido)".into())
+    }
+
     /// Ejecuta la acción ya confirmada del modal.
     pub fn ejecutar_confirmada(&mut self) {
         let Some(c) = self.confirm.take() else { return };
@@ -1279,28 +1338,29 @@ impl App {
         else {
             return;
         };
+        let ctx = self.contexto_del_pane(c.pane);
         let bridge = self.bridge.clone();
         match c.verbo {
             Verbo::Borrar => {
                 self.rt.spawn(async move {
-                    k8s::actions::borrar(client, ar, c.ns, c.name, bridge).await;
+                    k8s::actions::borrar(client, ar, c.ns, c.name, ctx, bridge).await;
                 });
             }
             Verbo::Reiniciar => {
                 if c.kind == "Pod" {
                     // Reiniciar un pod es borrarlo: el controlador lo repone.
                     self.rt.spawn(async move {
-                        k8s::actions::borrar(client, ar, c.ns, c.name, bridge).await;
+                        k8s::actions::borrar(client, ar, c.ns, c.name, ctx, bridge).await;
                     });
                 } else {
                     self.rt.spawn(async move {
-                        k8s::actions::reiniciar(client, ar, c.ns, c.name, bridge).await;
+                        k8s::actions::reiniciar(client, ar, c.ns, c.name, ctx, bridge).await;
                     });
                 }
             }
             Verbo::Escalar(n) => {
                 self.rt.spawn(async move {
-                    k8s::actions::escalar(client, ar, c.ns, c.name, n, bridge).await;
+                    k8s::actions::escalar(client, ar, c.ns, c.name, n, ctx, bridge).await;
                 });
             }
         }
@@ -1329,9 +1389,10 @@ impl App {
             );
             return;
         }
+        let ctx = self.contexto_del_pane(pane_id);
         let bridge = self.bridge.clone();
         self.rt.spawn(async move {
-            k8s::actions::aplicar_yaml(client, ar, yaml, name, ns, bridge).await;
+            k8s::actions::aplicar_yaml(client, ar, yaml, name, ns, ctx, bridge).await;
         });
     }
 
@@ -1464,6 +1525,21 @@ impl App {
                 std::env::set_var("KUBO_TEST_PF", "");
                 std::env::set_var("KUBO_TEST_PF_AUTO", "1");
                 self.pedir_forward(pane_id, &spec);
+            }
+        }
+
+        // KUBO_TEST_VISTA=auditoria|forwards — abre una vista local.
+        if let Ok(v) = std::env::var("KUBO_TEST_VISTA") {
+            if !v.is_empty() {
+                std::env::set_var("KUBO_TEST_VISTA", "");
+                let vista = match v.as_str() {
+                    "auditoria" => Some(VistaLocal::Auditoria),
+                    "forwards" => Some(VistaLocal::PortForwards),
+                    _ => None,
+                };
+                if let Some(vl) = vista {
+                    self.ver_vista_local(pane_id, vl);
+                }
             }
         }
 
@@ -1621,6 +1697,23 @@ impl App {
                 if let Some((_, c)) = self.clusters.iter_mut().find(|(_, c)| c.token == token) {
                     c.conn = Conn::Error;
                     c.error = Some(error);
+                }
+            }
+            K8sEvent::Permisos {
+                clave,
+                permisos,
+            } => {
+                // Se guarda en el cluster, no en el panel: el RBAC es del
+                // contexto y lo aprovechan todos los paneles que lo miran.
+                let contextos: Vec<String> = self
+                    .panes
+                    .iter()
+                    .filter_map(|p| p.contexto.clone())
+                    .collect();
+                for c in contextos {
+                    if let Some(cl) = self.clusters.get_mut(&c) {
+                        cl.permisos.insert(clave.clone(), permisos.clone());
+                    }
                 }
             }
             K8sEvent::Backends { token, items } => {

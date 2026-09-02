@@ -9,6 +9,7 @@ pub mod endpoints;
 pub mod exec;
 pub mod logs;
 pub mod mapa;
+pub mod permisos;
 pub mod portforward;
 pub mod search;
 pub mod session;
@@ -148,6 +149,11 @@ pub enum K8sEvent {
     Endpoints {
         token: u64,
         mapa: std::collections::HashMap<String, endpoints::Conteo>,
+    },
+    /// Qué verbos permite el RBAC sobre el recurso de la vista.
+    Permisos {
+        clave: String,
+        permisos: permisos::Permisos,
     },
     /// Backends concretos de un Service, para el panel de detalle.
     Backends {

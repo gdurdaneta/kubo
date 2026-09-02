@@ -97,6 +97,8 @@ pub fn id_busqueda(pane_id: u64) -> egui::Id {
 }
 
 pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
+    let permisos = app.permisos_del_pane(id).cloned();
+    let cursor = app.panes.iter().find(|p| p.id == id).and_then(|p| p.cursor);
     // Las celdas son objetivos de clic, no texto para seleccionar: arrastrando
     // sobre la tabla se pintaba media pantalla de azul. En el detalle sí queda
     // seleccionable, que ahí uno copia UIDs e IPs.
@@ -154,6 +156,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     // los endpoints llegaban antes que las filas, la columna quedaba en `—`
     // para siempre, porque el watch solo reenvía cuando algo cambia.
     let endpoints = columns::tiene_endpoints(&kind).then_some(&pane.endpoints);
+    // Ya se resolvió arriba, antes de prestar el store mutablemente.
+    let permisos = permisos.as_ref();
     let col_estado = columns::indice_estado(&kind, mostrar_ns);
     let Some(store) = pane.store.as_mut() else { return };
     store.set_col_estado(col_estado);
@@ -168,6 +172,38 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     }
 
     let filas = store.visibles();
+
+    // Teclado: ↑↓ mueven la fila resaltada, ↵ abre el detalle, esc lo cierra.
+    // Solo si no hay nada escribiendo (buscador, filtro, editor, shell): si no,
+    // las flechas se las robaríamos al campo de texto.
+    let mut mover: i64 = 0;
+    let mut abrir = false;
+    let mut cerrar = false;
+    if filas > 0 && ui.ctx().memory(|m| m.focused().is_none()) {
+        ui.ctx().input_mut(|i| {
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown) {
+                mover = 1;
+            }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp) {
+                mover = -1;
+            }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::PageDown) {
+                mover = 10;
+            }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::PageUp) {
+                mover = -10;
+            }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::Home) {
+                mover = i64::MIN;
+            }
+            if i.consume_key(egui::Modifiers::NONE, egui::Key::End) {
+                mover = i64::MAX;
+            }
+            abrir = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+            cerrar = i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+        });
+    }
+
     if store.cargando && filas == 0 {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
@@ -187,6 +223,35 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
         return;
     }
 
+    // El cursor se acota a la vista actual: filtrar u ordenar cambia las filas
+    // bajo los pies.
+    let mut cursor = cursor.map(|c| c.min(filas - 1));
+    if mover != 0 {
+        let base = cursor.unwrap_or(0) as i64;
+        let destino = match mover {
+            i64::MIN => 0,
+            i64::MAX => filas as i64 - 1,
+            d => (base + d).clamp(0, filas as i64 - 1),
+        };
+        cursor = Some(destino as usize);
+        // Con el detalle abierto, moverse lo va siguiendo: es lo que uno espera
+        // al recorrer una lista revisando.
+        if sel_key.is_some() {
+            if let Some((k, _, _)) = store.fila(destino as usize) {
+                *accion = Accion::AbrirDetalle(id, k.to_string());
+            }
+        }
+    }
+    if abrir {
+        if let Some((k, _, _)) = cursor.and_then(|c| store.fila(c)) {
+            *accion = Accion::AbrirDetalle(id, k.to_string());
+        }
+    }
+    if cerrar && sel_key.is_some() {
+        *accion = Accion::CerrarDetalle(id);
+    }
+
+    let mut clic_en: Option<usize> = None;
     let cabeceras = columns::headers(&kind, mostrar_ns);
     let sep = ui.spacing().item_spacing.x;
     let (anchos, scrollear) = repartir_anchos(&cabeceras, ui.available_width(), sep);
@@ -202,13 +267,19 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
                 ui.set_min_width(ancho_pedido);
                 cuerpo(
                     ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints,
-                    accion,
+                    permisos, cursor, mover != 0, &mut clic_en, accion,
                 );
             });
     } else {
         cuerpo(
-            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, accion,
+            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, permisos,
+            cursor, mover != 0, &mut clic_en, accion,
         );
+    }
+
+    if let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) {
+        // Un clic también reposiciona el cursor, para que ↑↓ siga desde ahí.
+        pane.cursor = clic_en.or(cursor);
     }
 }
 
@@ -223,6 +294,10 @@ fn cuerpo(
     kind: &str,
     pane_id: u64,
     endpoints: Option<&std::collections::HashMap<String, crate::k8s::endpoints::Conteo>>,
+    permisos: Option<&crate::k8s::permisos::Permisos>,
+    cursor: Option<usize>,
+    seguir_cursor: bool,
+    clic_en: &mut Option<usize>,
     accion: &mut Accion,
 ) {
     let es_pod = kind == "Pod";
@@ -280,7 +355,8 @@ fn cuerpo(
                     return;
                 };
                 let key = key.to_string();
-                row.set_selected(sel_key.as_deref() == Some(key.as_str()));
+                let es_cursor = cursor == Some(idx);
+                row.set_selected(sel_key.as_deref() == Some(key.as_str()) || es_cursor);
 
                 for celda in celdas {
                     row.col(|ui| {
@@ -301,15 +377,22 @@ fn cuerpo(
                 });
 
                 let resp = row.response();
+                // Al moverse con el teclado la fila tiene que entrar en pantalla.
+                if es_cursor && seguir_cursor {
+                    resp.scroll_to_me(None);
+                }
                 if resp.clicked() {
                     *accion = Accion::AbrirDetalle(pane_id, key.clone());
+                    *clic_en = Some(idx);
                 }
                 if es_pod && resp.double_clicked() {
                     *accion = Accion::AbrirLogs(pane_id, key.clone());
                 }
                 let (ns, nombre) = partir_key(&key);
                 resp.context_menu(|ui| {
-                    menu_acciones(ui, pane_id, kind, &key, ns.clone(), nombre.clone(), accion);
+                    menu_acciones(
+                        ui, pane_id, kind, &key, ns.clone(), nombre.clone(), permisos, accion,
+                    );
                 });
             });
         });
@@ -434,6 +517,7 @@ fn partir_key(key: &str) -> (Option<String>, String) {
 }
 
 /// Menú contextual con las acciones del Kind. También lo usa el detalle.
+#[allow(clippy::too_many_arguments)]
 pub fn menu_acciones(
     ui: &mut egui::Ui,
     pane_id: u64,
@@ -441,15 +525,22 @@ pub fn menu_acciones(
     key: &str,
     ns: Option<String>,
     nombre: String,
+    permisos: Option<&crate::k8s::permisos::Permisos>,
     accion: &mut Accion,
 ) {
+    // Solo se deshabilita cuando el API server dijo explícitamente que no.
+    // Sin respuesta se ofrece igual: es preferible que una acción falle a
+    // esconder una que el usuario sí podía hacer.
+    let puede = |verbo: &str| !permisos.is_some_and(|p| p.prohibido(verbo));
+    let ayuda_rbac = "tu RBAC no permite esta acción sobre este recurso";
     if ui.button("Ver detalle").clicked() {
         *accion = Accion::AbrirDetalle(pane_id, key.to_string());
         ui.close();
     }
     if ui
-        .button("✎ Editar manifiesto…")
+        .add_enabled(puede("update"), egui::Button::new("✎ Editar manifiesto…"))
         .on_hover_text("Abre el YAML del objeto para editarlo y aplicarlo")
+        .on_disabled_hover_text(ayuda_rbac)
         .clicked()
     {
         *accion = Accion::EditarManifiesto(pane_id, key.to_string());
@@ -479,7 +570,12 @@ pub fn menu_acciones(
         ui.close();
     }
     ui.separator();
-    if escalable(kind) && ui.button("Escalar…").clicked() {
+    if escalable(kind)
+        && ui
+            .add_enabled(puede("patch"), egui::Button::new("Escalar…"))
+            .on_disabled_hover_text(ayuda_rbac)
+            .clicked()
+    {
         *accion = Accion::Confirmar(Confirmacion {
             pane: pane_id,
             verbo: Verbo::Escalar(-1), // -1 = precargar réplicas actuales
@@ -489,7 +585,14 @@ pub fn menu_acciones(
         });
         ui.close();
     }
-    if reiniciable(kind) && ui.button("Reiniciar").clicked() {
+    // Reiniciar un Pod es borrarlo para que el controlador lo recree.
+    let verbo_reinicio = if kind == "Pod" { "delete" } else { "patch" };
+    if reiniciable(kind)
+        && ui
+            .add_enabled(puede(verbo_reinicio), egui::Button::new("Reiniciar"))
+            .on_disabled_hover_text(ayuda_rbac)
+            .clicked()
+    {
         *accion = Accion::Confirmar(Confirmacion {
             pane: pane_id,
             verbo: Verbo::Reiniciar,
@@ -500,7 +603,11 @@ pub fn menu_acciones(
         ui.close();
     }
     if ui
-        .button(egui::RichText::new("Borrar").color(theme::BAD))
+        .add_enabled(
+            puede("delete"),
+            egui::Button::new(egui::RichText::new("Borrar").color(theme::BAD)),
+        )
+        .on_disabled_hover_text(ayuda_rbac)
         .clicked()
     {
         *accion = Accion::Confirmar(Confirmacion {

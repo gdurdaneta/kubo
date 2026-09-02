@@ -265,12 +265,14 @@ const EXTENSIONES: &[ExtSpec] = &[
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VistaLocal {
     PortForwards,
+    Auditoria,
 }
 
 impl VistaLocal {
     pub fn label(self) -> &'static str {
         match self {
             Self::PortForwards => "Port Forwards",
+            Self::Auditoria => "Acciones hechas",
         }
     }
 }
@@ -350,6 +352,11 @@ pub fn build(resources: &[Discovered]) -> Vec<NavCategory> {
         // sea local y no un recurso del cluster.
         if spec.name == "Network" {
             cat.locales.push(VistaLocal::PortForwards);
+        }
+        // El registro de lo que uno hizo es del cliente, no del cluster, pero
+        // se busca junto con Events: por eso va en Cluster.
+        if spec.name == "Cluster" {
+            cat.locales.push(VistaLocal::Auditoria);
         }
         if !cat.items.is_empty() || !cat.locales.is_empty() {
             base.push(cat);
