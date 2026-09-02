@@ -108,9 +108,33 @@ pub async fn aplicar_yaml(
         bridge.toast("no se puede cambiar el namespace del objeto", true);
         return;
     }
+    // Sin resourceVersion el PUT no es optimista: pisa lo que haya en el
+    // cluster aunque otro lo haya cambiado mientras tanto. Es fácil borrarla
+    // sin querer al limpiar el manifiesto, así que se exige.
+    if obj
+        .metadata
+        .resource_version
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
+        bridge.toast(
+            "falta metadata.resourceVersion: sin eso el cambio pisaría lo que \
+             haya en el cluster. Recargá y volvé a editar.",
+            true,
+        );
+        return;
+    }
     let api = api_for(client, &ar, esperado_ns.as_deref());
     match api.replace(&name, &PostParams::default(), &obj).await {
         Ok(_) => bridge.toast(format!("«{name}» actualizado"), false),
-        Err(e) => bridge.toast(format!("no se pudo aplicar: {e}"), true),
+        Err(e) => {
+            // 409 es el caso esperable: alguien más tocó el objeto.
+            let msg = if format!("{e}").contains("409") || format!("{e}").contains("Conflict") {
+                format!("«{name}» cambió en el cluster desde que lo abriste. Recargá y volvé a aplicar.")
+            } else {
+                format!("no se pudo aplicar: {e}")
+            };
+            bridge.toast(msg, true)
+        }
     }
 }

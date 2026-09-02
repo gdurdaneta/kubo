@@ -14,6 +14,8 @@ pub const ACENTO: Color32 = Color32::from_rgb(0x3d, 0x90, 0xf0);
 pub const OK: Color32 = Color32::from_rgb(0x4c, 0xc3, 0x8a);
 pub const WARN: Color32 = Color32::from_rgb(0xe0, 0xa6, 0x3a);
 pub const BAD: Color32 = Color32::from_rgb(0xe5, 0x63, 0x63);
+/// Fondo apenas teñido, para avisar sin gritar.
+pub const BAD_TENUE: egui::Color32 = egui::Color32::from_rgb(58, 30, 34);
 
 /// Las fuentes que trae egui no cubren los símbolos geométricos (●, ▼, ×, ↻):
 /// sin esto la UI se llena de cuadraditos. DejaVu sí los tiene y está en

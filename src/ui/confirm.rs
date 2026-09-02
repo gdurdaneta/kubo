@@ -34,6 +34,12 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
     let mut ejecutar = false;
     let mut cancelar = false;
 
+    let contexto = app
+        .panes
+        .iter()
+        .find(|p| Some(p.id) == app.confirm.as_ref().map(|c| c.pane))
+        .and_then(|p| p.contexto.clone());
+
     let modal = egui::Modal::new(egui::Id::new("confirmacion")).show(ctx, |ui| {
         ui.set_width(360.0);
         let c = app.confirm.as_mut().unwrap();
@@ -41,6 +47,41 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
             Some(ns) => format!("{} «{}» en {ns}", c.kind, c.name),
             None => format!("{} «{}»", c.kind, c.name),
         };
+
+        // El cluster va primero y bien visible. Con varios paneles abiertos
+        // sobre contextos distintos, no decirlo es la forma más fácil de tocar
+        // producción creyendo que se está en staging.
+        if let Some(ctx_nombre) = contexto.as_deref() {
+            let prod = parece_produccion(ctx_nombre);
+            egui::Frame::new()
+                .fill(if prod { theme::BAD_TENUE } else { theme::PANEL_ALT })
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    if prod { theme::BAD } else { theme::BORDE },
+                ))
+                .corner_radius(4)
+                .inner_margin(6)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.colored_label(
+                            if prod { theme::BAD } else { theme::TEXTO_TENUE },
+                            if prod { "⚠ cluster" } else { "cluster" },
+                        );
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(ctx_nombre)
+                                    .strong()
+                                    .color(if prod { theme::BAD } else { theme::TEXTO }),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(ctx_nombre);
+                    });
+                });
+            ui.add_space(8.0);
+        }
 
         match &mut c.verbo {
             Verbo::Borrar => {
@@ -101,5 +142,33 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
     }
     if ejecutar {
         app.ejecutar_confirmada();
+    }
+}
+
+/// Heurística sobre el nombre del contexto para marcar los que parecen
+/// producción. Falsos positivos son baratos —solo pinta el aviso de rojo—;
+/// un falso negativo solo deja el diálogo como estaba.
+fn parece_produccion(ctx: &str) -> bool {
+    let c = ctx.to_lowercase();
+    ["prod", "produccion", "producción", "live", "prd"]
+        .iter()
+        .any(|p| c.contains(p))
+        && !c.contains("preprod")
+        && !c.contains("non-prod")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parece_produccion;
+
+    #[test]
+    fn marca_los_contextos_de_produccion() {
+        assert!(parece_produccion("justo-prod-mexico"));
+        assert!(parece_produccion("arn:aws:eks:us-east-1:1234:cluster/prod"));
+        assert!(parece_produccion("PRD-cluster"));
+        assert!(!parece_produccion("arn:aws:eks:us-east-2:1234:cluster/staging"));
+        assert!(!parece_produccion("inxpirius@217.76.158.104"));
+        assert!(!parece_produccion("preprod"));
+        assert!(!parece_produccion("non-prod-eu"));
     }
 }

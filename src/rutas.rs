@@ -86,3 +86,29 @@ pub const FUENTES_MONO: &[&str] = &[
 pub fn primera_existente(rutas: &[&str]) -> Option<Vec<u8>> {
     rutas.iter().find_map(|r| std::fs::read(r).ok())
 }
+
+/// Crea el directorio y deja el archivo accesible solo por su dueño.
+///
+/// Lo que kubo guarda no son credenciales, pero sí dice bastante: la sesión
+/// lleva el nombre del contexto —que en EKS es un ARN con el ID de cuenta— y
+/// la caché enumera toda la API del cluster, operadores incluidos. Con el
+/// umask habitual eso quedaba legible por cualquier usuario de la máquina.
+pub fn escribir_privado(destino: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(dir) = destino.parent() {
+        std::fs::create_dir_all(dir)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    // Escritura atómica: un archivo a medias rompería el arranque siguiente.
+    let tmp = destino.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+    }
+    std::fs::rename(&tmp, destino)
+}

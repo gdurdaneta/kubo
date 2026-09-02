@@ -40,16 +40,8 @@ pub fn cargar() -> Estado {
 /// justifica molestar al usuario.
 pub fn guardar(e: &Estado) {
     let Some(p) = ruta() else { return };
-    if let Some(dir) = p.parent() {
-        if std::fs::create_dir_all(dir).is_err() {
-            return;
-        }
-    }
     let Ok(bytes) = serde_json::to_vec_pretty(e) else {
         return;
     };
-    let tmp = p.with_extension("tmp");
-    if std::fs::write(&tmp, bytes).is_ok() {
-        let _ = std::fs::rename(&tmp, &p);
-    }
+    let _ = crate::rutas::escribir_privado(&p, &bytes);
 }

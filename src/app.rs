@@ -1447,6 +1447,24 @@ impl App {
             }
         }
 
+        // KUBO_TEST_CONFIRM=Kind:ns:nombre — abre el modal de confirmación de
+        // borrado sin ejecutarlo (ejecutar requiere el clic).
+        if let Ok(spec) = std::env::var("KUBO_TEST_CONFIRM") {
+            if !spec.is_empty() {
+                std::env::set_var("KUBO_TEST_CONFIRM", "");
+                let partes: Vec<&str> = spec.split(':').collect();
+                if let [kind, ns, nombre] = partes[..] {
+                    self.confirm = Some(Confirmacion {
+                        pane: pane_id,
+                        verbo: Verbo::Borrar,
+                        kind: kind.to_string(),
+                        ns: (!ns.is_empty()).then(|| ns.to_string()),
+                        name: nombre.to_string(),
+                    });
+                }
+            }
+        }
+
         // KUBO_TEST_PALETTE=texto — abre la paleta con la query puesta.
         if let Ok(q) = std::env::var("KUBO_TEST_PALETTE") {
             if !q.is_empty() {

@@ -47,17 +47,8 @@ pub fn leer(server: &str) -> Option<(Vec<Discovered>, bool)> {
 /// solo más lenta.
 pub fn escribir(server: &str, recursos: &[Discovered]) {
     let Some(p) = ruta(server) else { return };
-    if let Some(dir) = p.parent() {
-        if std::fs::create_dir_all(dir).is_err() {
-            return;
-        }
-    }
     let Ok(bytes) = serde_json::to_vec(recursos) else {
         return;
     };
-    // Escritura atómica: un archivo a medias haría fallar el parseo la próxima.
-    let tmp = p.with_extension("tmp");
-    if std::fs::write(&tmp, bytes).is_ok() {
-        let _ = std::fs::rename(&tmp, &p);
-    }
+    let _ = crate::rutas::escribir_privado(&p, &bytes);
 }
