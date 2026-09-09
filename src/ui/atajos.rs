@@ -9,7 +9,11 @@ use crate::theme;
 
 /// (grupo, tecla, qué hace). El grupo se repite para agrupar en la vista.
 const ATAJOS: &[(&str, &str, &str)] = &[
-    ("Navegación", "Ctrl+K", "Buscar cualquier recurso del cluster"),
+    (
+        "Navegación",
+        "Ctrl+K",
+        "Buscar cualquier recurso del cluster",
+    ),
     ("Navegación", "Ctrl+P", "Cambiar de cluster"),
     ("Navegación", "Ctrl+N", "Cambiar de namespace"),
     ("Navegación", "escribir", "Cae en el buscador de la tabla"),
@@ -24,7 +28,11 @@ const ATAJOS: &[(&str, &str, &str)] = &[
     ("Tabla", "Esc", "Cerrar el detalle"),
     ("Tabla", "clic", "Abrir el detalle"),
     ("Tabla", "doble clic", "Logs del pod"),
-    ("Tabla", "clic derecho", "Acciones: escalar, reiniciar, borrar, forward"),
+    (
+        "Tabla",
+        "clic derecho",
+        "Acciones: escalar, reiniciar, borrar, forward",
+    ),
     ("Tabla", "clic en cabecera", "Ordenar por esa columna"),
     ("Ayuda", "F1", "Esta ventana"),
 ];
@@ -62,10 +70,8 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context) {
             }
             ui.horizontal(|ui| {
                 // Ancho fijo para que las teclas queden en columna.
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(120.0, 20.0),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(120.0, 20.0), egui::Sense::hover());
                 let mut tecla_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(rect)

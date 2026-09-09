@@ -111,7 +111,12 @@ cargo build --release
 ```
 
 Deja el binario en `~/.local/bin`, el ícono en el tema hicolor y la entrada
-en el launcher. Sin sudo. Para sacarlo: `./instalar.sh --quitar`.
+en el launcher. La entrada usa la ruta absoluta `~/.local/bin/kubo`, así no
+depende del `PATH` de la sesión gráfica. Sin sudo. Para sacarlo:
+`./instalar.sh --quitar`.
+
+El `.tar.gz` de cada release Linux ya incluye `kubo`, `instalar.sh` y los
+iconos. Después de extraerlo, ejecutá `./instalar.sh`.
 
 ## Publicar una versión
 

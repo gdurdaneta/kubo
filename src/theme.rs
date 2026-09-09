@@ -25,20 +25,26 @@ fn cargar_fuentes(ctx: &egui::Context) {
     let mut hubo_cambio = false;
 
     if let Some(bytes) = crate::rutas::primera_existente(crate::rutas::FUENTES_PROPORCIONALES) {
-        fuentes
-            .font_data
-            .insert("sistema".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
+        fuentes.font_data.insert(
+            "sistema".to_owned(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
         // Como fallback, no como primaria: la de egui se ve mejor para texto.
         for familia in [FontFamily::Proportional, FontFamily::Monospace] {
-            fuentes.families.entry(familia).or_default().push("sistema".to_owned());
+            fuentes
+                .families
+                .entry(familia)
+                .or_default()
+                .push("sistema".to_owned());
         }
         hubo_cambio = true;
     }
 
     if let Some(bytes) = crate::rutas::primera_existente(crate::rutas::FUENTES_MONO) {
-        fuentes
-            .font_data
-            .insert("sistema_mono".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
+        fuentes.font_data.insert(
+            "sistema_mono".to_owned(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
         fuentes
             .families
             .entry(FontFamily::Monospace)

@@ -7,12 +7,12 @@
 
 mod app;
 mod auditoria;
-mod hosts;
-mod layout;
-mod rutas;
 mod columns;
+mod hosts;
 mod k8s;
+mod layout;
 mod nav;
+mod rutas;
 mod store;
 mod theme;
 mod ui;

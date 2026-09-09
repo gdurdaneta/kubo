@@ -1,6 +1,12 @@
 //! Capa de acceso a Kubernetes. Todo corre sobre el runtime de tokio y se
 //! comunica con la UI por canal; el hilo de render nunca bloquea.
 
+use std::fmt::Debug;
+
+use kube::api::{Api, DynamicObject, ListParams};
+use kube::discovery::ApiResource;
+use serde::de::DeserializeOwned;
+
 pub mod actions;
 pub mod cache;
 pub mod contexts;
@@ -16,8 +22,28 @@ pub mod search;
 pub mod session;
 pub mod watch;
 
-use kube::api::DynamicObject;
-use kube::discovery::ApiResource;
+/// Lista una colección completa respetando el token `continue` del API server.
+///
+/// `limit` define el tamaño de página, no un máximo total. Centralizar esta
+/// lógica evita que los distintos paneles trunquen recursos silenciosamente.
+pub async fn listar_todo<K>(api: &Api<K>, params: &ListParams) -> Result<Vec<K>, kube::Error>
+where
+    K: Clone + DeserializeOwned + Debug,
+{
+    let mut params = params.clone();
+    params.continue_token = None;
+    let mut items = Vec::new();
+
+    loop {
+        let mut pagina = api.list(&params).await?;
+        let siguiente = pagina.metadata.continue_.take().filter(|t| !t.is_empty());
+        items.append(&mut pagina.items);
+        match siguiente {
+            Some(token) => params.continue_token = Some(token),
+            None => return Ok(items),
+        }
+    }
+}
 
 /// Un recurso servido por el cluster, tal como lo reporta discovery.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -141,6 +167,8 @@ pub enum K8sEvent {
     Search {
         token: u64,
         hits: Vec<search::Hit>,
+        completo: bool,
+        parcial: bool,
     },
     Toast {
         text: String,

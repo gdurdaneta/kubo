@@ -166,10 +166,10 @@ pub async fn sondear(
     let mut avisado = false;
     loop {
         intervalo.tick().await;
-        match api.list(&ListParams::default().limit(2000)).await {
-            Ok(lista) => {
+        match super::listar_todo(&api, &ListParams::default().limit(2000)).await {
+            Ok(items) => {
                 avisado = false;
-                let mapa: HashMap<String, Uso> = lista.items.iter().filter_map(leer).collect();
+                let mapa: HashMap<String, Uso> = items.iter().filter_map(leer).collect();
                 tracing::debug!(kind = %ar.kind, n = mapa.len(), "métricas: muestra");
                 bridge.send(K8sEvent::Metricas { token, mapa });
             }
@@ -262,7 +262,13 @@ mod tests {
         }));
         let (clave, uso) = leer(&o).unwrap();
         assert_eq!(clave, "prod/web-1");
-        assert_eq!(uso, Uso { cpu_m: 150, mem_bytes: 120 << 20 });
+        assert_eq!(
+            uso,
+            Uso {
+                cpu_m: 150,
+                mem_bytes: 120 << 20
+            }
+        );
     }
 
     #[test]
@@ -283,7 +289,13 @@ mod tests {
         let mut h = Historial::default();
         for i in 0..(HISTORIAL as u64 + 10) {
             let mut m = HashMap::new();
-            m.insert("a".to_string(), Uso { cpu_m: i, mem_bytes: 0 });
+            m.insert(
+                "a".to_string(),
+                Uso {
+                    cpu_m: i,
+                    mem_bytes: 0,
+                },
+            );
             h.agregar(&m);
         }
         assert_eq!(h.por_clave["a"].len(), HISTORIAL);
@@ -291,6 +303,9 @@ mod tests {
 
         let solo_b: HashMap<_, _> = [("b".to_string(), Uso::default())].into();
         h.agregar(&solo_b);
-        assert!(!h.por_clave.contains_key("a"), "lo que dejó de existir se va");
+        assert!(
+            !h.por_clave.contains_key("a"),
+            "lo que dejó de existir se va"
+        );
     }
 }

@@ -194,12 +194,17 @@ impl Store {
                 *cuenta.entry(c.text.as_str()).or_insert(0) += 1;
             }
         }
-        cuenta.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+        cuenta
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
 
     /// ¿La fila pasa el filtro de estado?
     fn pasa_estado(&self, e: &Entry) -> bool {
-        let Some(col) = self.col_estado else { return true };
+        let Some(col) = self.col_estado else {
+            return true;
+        };
         let texto = e.cells.get(col).map(|c| c.text.as_str()).unwrap_or("");
         match &self.filtro_estado {
             FiltroEstado::Todos => true,
@@ -256,8 +261,16 @@ impl Store {
             });
         } else {
             claves.sort_by(|a, b| {
-                let va = items.get(*a).and_then(|e| e.cells.get(col)).map(|c| c.text.as_str()).unwrap_or("");
-                let vb = items.get(*b).and_then(|e| e.cells.get(col)).map(|c| c.text.as_str()).unwrap_or("");
+                let va = items
+                    .get(*a)
+                    .and_then(|e| e.cells.get(col))
+                    .map(|c| c.text.as_str())
+                    .unwrap_or("");
+                let vb = items
+                    .get(*b)
+                    .and_then(|e| e.cells.get(col))
+                    .map(|c| c.text.as_str())
+                    .unwrap_or("");
                 comparar(va, vb).then_with(|| a.cmp(b))
             });
         }
@@ -350,6 +363,37 @@ mod tests {
         }
         s.init_done();
         s
+    }
+
+    fn evento(name: &str, type_: &str) -> DynamicObject {
+        serde_json::from_value(serde_json::json!({
+            "apiVersion": "v1",
+            "kind": "Event",
+            "metadata": { "name": name, "namespace": "default" },
+            "type": type_,
+            "reason": "Prueba",
+            "involvedObject": { "kind": "Pod", "name": "api" },
+            "message": "mensaje",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn filtra_events_warning_como_problema() {
+        assert_eq!(columns::titulo_estado("Event"), Some("Tipo"));
+        assert_eq!(columns::indice_estado("Event", true), Some(2));
+
+        let mut s = Store::new("Event".into(), true);
+        s.set_col_estado(columns::indice_estado("Event", true));
+        s.init_start();
+        s.init_apply(evento("normal", "Normal"));
+        s.init_apply(evento("warning", "Warning"));
+        s.init_done();
+        s.set_filtro_estado(FiltroEstado::Problemas);
+        s.refrescar();
+
+        assert_eq!(s.visibles(), 1);
+        assert_eq!(s.fila(0).map(|(key, _, _)| key), Some("default/warning"));
     }
 
     #[test]

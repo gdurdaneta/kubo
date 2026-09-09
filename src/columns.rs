@@ -262,10 +262,18 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
             let listos = num(status, "numberReady").unwrap_or(0);
             vec![
                 Cell::plain(deseados.to_string()),
-                Cell::plain(num(status, "currentNumberScheduled").unwrap_or(0).to_string()),
+                Cell::plain(
+                    num(status, "currentNumberScheduled")
+                        .unwrap_or(0)
+                        .to_string(),
+                ),
                 Cell::toned(
                     listos.to_string(),
-                    if listos == deseados { Tone::Ok } else { Tone::Warn },
+                    if listos == deseados {
+                        Tone::Ok
+                    } else {
+                        Tone::Warn
+                    },
                 ),
                 Cell::plain(num(status, "numberAvailable").unwrap_or(0).to_string()),
             ]
@@ -286,10 +294,16 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
             } else {
                 ("Running".to_string(), Tone::Warn)
             };
-            vec![Cell::plain(format!("{ok}/{quiere}")), Cell::toned(txt, tono)]
+            vec![
+                Cell::plain(format!("{ok}/{quiere}")),
+                Cell::toned(txt, tono),
+            ]
         }
         "CronJob" => {
-            let susp = spec.and_then(|s| s.get("suspend")).and_then(|v| v.as_bool()).unwrap_or(false);
+            let susp = spec
+                .and_then(|s| s.get("suspend"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let activos = status
                 .and_then(|s| s.get("active"))
                 .and_then(|v| v.as_array())
@@ -316,7 +330,11 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
         "Node" => celdas_node(o, spec, status),
         "Namespace" => {
             let fase = txt(status, "phase");
-            let tono = if fase == "Active" { Tone::Ok } else { Tone::Warn };
+            let tono = if fase == "Active" {
+                Tone::Ok
+            } else {
+                Tone::Warn
+            };
             vec![Cell::toned(fase, tono)]
         }
         "PersistentVolumeClaim" => {
@@ -324,7 +342,11 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
             vec![
                 Cell::toned(
                     fase.clone(),
-                    if fase == "Bound" { Tone::Ok } else { Tone::Warn },
+                    if fase == "Bound" {
+                        Tone::Ok
+                    } else {
+                        Tone::Warn
+                    },
                 ),
                 Cell::plain(txt(spec, "volumeName")),
                 Cell::plain(
@@ -363,7 +385,11 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                 Cell::dim(txt(spec, "persistentVolumeReclaimPolicy")),
                 Cell::toned(
                     fase.clone(),
-                    if fase == "Bound" { Tone::Ok } else { Tone::Warn },
+                    if fase == "Bound" {
+                        Tone::Ok
+                    } else {
+                        Tone::Warn
+                    },
                 ),
                 Cell::dim(txt(spec, "storageClassName")),
             ]
@@ -380,11 +406,20 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                     .unwrap_or(0);
             vec![
                 Cell::plain(n.to_string()),
-                Cell::dim(d.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                Cell::dim(
+                    d.get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                ),
             ]
         }
         "Event" => {
-            let t = d.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let t = d
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let obj = d
                 .get("involvedObject")
                 .map(|io| {
@@ -400,9 +435,19 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                     t.clone(),
                     if t == "Warning" { Tone::Bad } else { Tone::Dim },
                 ),
-                Cell::plain(d.get("reason").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                Cell::plain(
+                    d.get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                ),
                 Cell::dim(obj),
-                Cell::plain(d.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string()),
+                Cell::plain(
+                    d.get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                ),
             ]
         }
         "ServiceAccount" => vec![Cell::plain(
@@ -441,10 +486,18 @@ fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -
         .map(|a| a.len())
         .unwrap_or(0);
     let listos = cs
-        .map(|a| a.iter().filter(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)).count())
+        .map(|a| {
+            a.iter()
+                .filter(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false))
+                .count()
+        })
         .unwrap_or(0);
     let restarts: i64 = cs
-        .map(|a| a.iter().filter_map(|c| c.get("restartCount").and_then(|v| v.as_i64())).sum())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.get("restartCount").and_then(|v| v.as_i64()))
+                .sum()
+        })
         .unwrap_or(0);
 
     let (estado, tono) = estado_pod(o, status, cs, listos, total);
@@ -452,7 +505,11 @@ fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -
     vec![
         Cell::toned(
             format!("{listos}/{total}"),
-            if listos == total && total > 0 { Tone::Ok } else { Tone::Warn },
+            if listos == total && total > 0 {
+                Tone::Ok
+            } else {
+                Tone::Warn
+            },
         ),
         Cell::toned(estado, tono),
         Cell::toned(
@@ -486,7 +543,10 @@ fn estado_pod(
         for c in arr {
             let st = c.get("state");
             if let Some(w) = st.and_then(|s| s.get("waiting")) {
-                let r = w.get("reason").and_then(|v| v.as_str()).unwrap_or("Waiting");
+                let r = w
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Waiting");
                 return (r.to_string(), Tone::Bad);
             }
             if let Some(t) = st.and_then(|s| s.get("terminated")) {
@@ -531,7 +591,12 @@ fn celdas_service(spec: Option<&Value>, status: Option<&Value>) -> Vec<Cell> {
     } else {
         spec.and_then(|s| s.get("externalIPs"))
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(","))
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
             .unwrap_or_else(|| "-".into())
     };
     let puertos = spec
@@ -577,7 +642,11 @@ fn celdas_ingress(spec: Option<&Value>, status: Option<&Value>) -> Vec<Cell> {
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|i| i.get("hostname").or_else(|| i.get("ip")).and_then(|v| v.as_str()))
+                .filter_map(|i| {
+                    i.get("hostname")
+                        .or_else(|| i.get("ip"))
+                        .and_then(|v| v.as_str())
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         })
@@ -593,7 +662,10 @@ fn celdas_node(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) 
     let ready = status
         .and_then(|s| s.get("conditions"))
         .and_then(|v| v.as_array())
-        .and_then(|a| a.iter().find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready")))
+        .and_then(|a| {
+            a.iter()
+                .find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready"))
+        })
         .and_then(|c| c.get("status").and_then(|v| v.as_str()))
         .unwrap_or("Unknown")
         .to_string();
@@ -615,13 +687,20 @@ fn celdas_node(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) 
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect();
-        if r.is_empty() { "<none>".to_string() } else { r.join(",") }
+        if r.is_empty() {
+            "<none>".to_string()
+        } else {
+            r.join(",")
+        }
     };
 
     let ip = status
         .and_then(|s| s.get("addresses"))
         .and_then(|v| v.as_array())
-        .and_then(|a| a.iter().find(|x| x.get("type").and_then(|v| v.as_str()) == Some("InternalIP")))
+        .and_then(|a| {
+            a.iter()
+                .find(|x| x.get("type").and_then(|v| v.as_str()) == Some("InternalIP"))
+        })
         .and_then(|x| x.get("address").and_then(|v| v.as_str()))
         .unwrap_or("")
         .to_string();

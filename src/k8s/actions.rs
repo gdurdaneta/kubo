@@ -103,7 +103,15 @@ pub async fn reiniciar(
             Err(e.to_string())
         }
     };
-    crate::auditoria::anotar(&contexto, "reiniciar", &ar.kind, &ns, &name, None, resultado);
+    crate::auditoria::anotar(
+        &contexto,
+        "reiniciar",
+        &ar.kind,
+        &ns,
+        &name,
+        None,
+        resultado,
+    );
 }
 
 /// Reemplaza el objeto con el YAML editado (PUT, optimista por resourceVersion).

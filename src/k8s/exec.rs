@@ -32,7 +32,11 @@ pub async fn run(
     ap.container = container;
 
     // bash si existe; si no, sh. Con exec para no dejar un sh padre colgado.
-    let cmd = ["sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"];
+    let cmd = [
+        "sh",
+        "-c",
+        "command -v bash >/dev/null 2>&1 && exec bash || exec sh",
+    ];
 
     let mut attached = match api.exec(&pod, cmd, &ap).await {
         Ok(a) => a,
@@ -47,7 +51,9 @@ pub async fn run(
 
     let mut stdout = attached.stdout().expect("stdout pedido en AttachParams");
     let mut stdin = attached.stdin().expect("stdin pedido en AttachParams");
-    let mut resize_tx = attached.terminal_size().expect("tty pedido en AttachParams");
+    let mut resize_tx = attached
+        .terminal_size()
+        .expect("tty pedido en AttachParams");
 
     let bridge_out = bridge.clone();
     let lector = tokio::spawn(async move {

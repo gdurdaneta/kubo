@@ -188,6 +188,10 @@ mod tests {
         std::fs::write(&p, txt).unwrap();
         registrar_en(&p, &entrada("otra", true));
 
-        assert_eq!(ultimas_de(&p, 10).len(), 2, "se saltea la línea rota y sigue");
+        assert_eq!(
+            ultimas_de(&p, 10).len(),
+            2,
+            "se saltea la línea rota y sigue"
+        );
     }
 }

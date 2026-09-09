@@ -36,7 +36,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accion
                 let ancho_ctx = if n_panes > 1 { 170.0 } else { 300.0 };
                 let actual = contexto.clone().unwrap_or_else(|| "(sin contexto)".into());
                 egui::ComboBox::from_id_salt(("ctx", id))
-                    .selected_text(egui::RichText::new(acortar(&actual, if n_panes > 1 { 22 } else { 40 })))
+                    .selected_text(egui::RichText::new(acortar(
+                        &actual,
+                        if n_panes > 1 { 22 } else { 40 },
+                    )))
                     .width(ancho_ctx)
                     .show_ui(ui, |ui| {
                         for c in &contextos {
@@ -81,7 +84,9 @@ fn selector_namespace(
     let Some(pane) = app.panes.iter().find(|p| p.id == id) else {
         return;
     };
-    let Some(cluster) = app.cluster_de(pane) else { return };
+    let Some(cluster) = app.cluster_de(pane) else {
+        return;
+    };
     if cluster.conn != Conn::Lista {
         return;
     }
@@ -90,7 +95,9 @@ fn selector_namespace(
         .selected_text(egui::RichText::new(acortar(&actual, 20)))
         .width(150.0)
         .show_ui(ui, |ui| {
-            if ui.selectable_label(ns_sel.is_none(), "todos los namespaces").clicked()
+            if ui
+                .selectable_label(ns_sel.is_none(), "todos los namespaces")
+                .clicked()
                 && ns_sel.is_some()
             {
                 *accion = Accion::CambiarNamespace(id, None);

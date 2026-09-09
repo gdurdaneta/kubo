@@ -40,9 +40,15 @@ jobs:
             docker run --rm -v "$PWD/target/release/kubo":/kubo:ro "$img" /kubo --version
           done
       - name: Empaquetar
+        # Solo se copian el binario compilado y archivos versionados del repo;
+        # el paquete no incorpora credenciales ni datos del runner.
         run: |
-          mkdir -p dist && cp target/release/kubo dist/
-          tar czf dist/kubo-linux-x86_64.tar.gz -C dist kubo
+          PAQUETE=dist/kubo-linux-x86_64
+          mkdir -p "$PAQUETE/assets/iconset"
+          cp target/release/kubo instalar.sh "$PAQUETE/"
+          cp assets/iconset/kubo-{16,32,64,128,256,512}.png "$PAQUETE/assets/iconset/"
+          tar czf dist/kubo-linux-x86_64.tar.gz -C dist kubo-linux-x86_64
+          tar tzf dist/kubo-linux-x86_64.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: linux

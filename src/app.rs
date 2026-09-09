@@ -128,6 +128,7 @@ pub struct Pane {
     pub ns_sel: Option<String>,
     pub nav_filtro: String,
     pub nav_cerradas: HashSet<String>,
+    pub favoritos: HashSet<String>,
     pub nav_visible: bool,
     pub item: Option<NavItem>,
     /// Vista local activa (port-forwards); tapa la tabla de recursos.
@@ -170,6 +171,7 @@ impl Pane {
             ns_sel: None,
             nav_filtro: String::new(),
             nav_cerradas: HashSet::new(),
+            favoritos: HashSet::new(),
             nav_visible: true,
             item: None,
             vista_local: None,
@@ -274,7 +276,11 @@ pub struct Forward {
 
 impl Forward {
     pub fn url(&self) -> String {
-        let esquema = if self.puerto_svc == 443 { "https" } else { "http" };
+        let esquema = if self.puerto_svc == 443 {
+            "https"
+        } else {
+            "http"
+        };
         format!("{esquema}://{}:{}", self.host, self.puerto_local)
     }
 
@@ -313,6 +319,8 @@ pub enum Verbo {
     Reiniciar,
     /// Lleva el valor editable del modal.
     Escalar(i64),
+    /// YAML validado por la UI y pendiente de confirmación.
+    AplicarYaml(String),
 }
 
 /// Paleta de comandos (Ctrl+K): salta a un Kind o a un recurso por nombre.
@@ -322,6 +330,7 @@ pub struct Palette {
     pub query: String,
     pub hits: Vec<Hit>,
     pub buscando: bool,
+    pub parcial: bool,
     pub token: u64,
     /// Índice seleccionado sobre la lista combinada (kinds + hits).
     pub sel: usize,
@@ -329,6 +338,16 @@ pub struct Palette {
     pub query_buscada: String,
     /// Segundos desde el último cambio del texto.
     pub desde_cambio: f32,
+    /// Búsqueda en curso; se aborta al cambiar la query o cerrar la paleta.
+    pub tarea: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for Palette {
+    fn drop(&mut self) {
+        if let Some(tarea) = self.tarea.take() {
+            tarea.abort();
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -430,6 +449,7 @@ impl App {
                 contexto: actual.clone(),
                 ns: actual.as_deref().and_then(k8s::session::default_namespace),
                 recurso: None,
+                favoritos: Vec::new(),
             });
         }
 
@@ -438,6 +458,7 @@ impl App {
             let mut pane = Pane::nueva(id, g.contexto.clone());
             pane.ns_sel = g.ns;
             pane.recurso_pendiente = g.recurso;
+            pane.favoritos = g.favoritos.into_iter().collect();
             app.panes.push(pane);
             if let Some(ctx) = g.contexto {
                 app.asegurar_cluster(&ctx);
@@ -568,7 +589,12 @@ impl App {
                 client: client.clone(),
             });
 
-            let (c1, c2, b1, b2) = (client.clone(), client.clone(), bridge.clone(), bridge.clone());
+            let (c1, c2, b1, b2) = (
+                client.clone(),
+                client.clone(),
+                bridge.clone(),
+                bridge.clone(),
+            );
             tokio::join!(
                 async move {
                     let version = k8s::session::version(c1).await;
@@ -624,7 +650,8 @@ impl App {
             .filter_map(|p| p.contexto.as_deref())
             .collect();
         // Un forward vivo sigue usando su cliente aunque el panel ya no esté.
-        let con_forward: HashSet<&str> = self.forwards.iter().map(|f| f.contexto.as_str()).collect();
+        let con_forward: HashSet<&str> =
+            self.forwards.iter().map(|f| f.contexto.as_str()).collect();
         self.clusters
             .retain(|k, _| en_uso.contains(k.as_str()) || con_forward.contains(k.as_str()));
     }
@@ -637,7 +664,9 @@ impl App {
         if pane.item.is_some() {
             return;
         }
-        let Some(cluster) = self.cluster_de(pane) else { return };
+        let Some(cluster) = self.cluster_de(pane) else {
+            return;
+        };
         if cluster.conn != Conn::Lista {
             return;
         }
@@ -765,8 +794,12 @@ impl App {
     /// Pregunta al API server qué verbos permite tu credencial sobre la vista
     /// recién abierta, para no ofrecer acciones que van a rebotar con un 403.
     fn consultar_permisos(&mut self, pane_id: u64) {
-        let Some(client) = self.client_del_pane(pane_id) else { return };
-        let Some(ar) = self.ar_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
+        let Some(ar) = self.ar_del_pane(pane_id) else {
+            return;
+        };
         let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
             return;
         };
@@ -805,24 +838,35 @@ impl App {
     /// cluster lo sirve: sin metrics-server las columnas no aparecen.
     fn sondear_metricas(&mut self, pane_id: u64) {
         let token = self.token();
-        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
         let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(cluster) = self.cluster_de(pane) else { return };
-        let kind = pane.item.as_ref().map(|i| i.res.ar.kind.clone()).unwrap_or_default();
+        let Some(cluster) = self.cluster_de(pane) else {
+            return;
+        };
+        let kind = pane
+            .item
+            .as_ref()
+            .map(|i| i.res.ar.kind.clone())
+            .unwrap_or_default();
         let sirve = |k: &str| {
-            cluster
-                .info
-                .as_ref()
-                .is_some_and(|i| i.resources.iter().any(|r| r.ar.kind == k && r.ar.group == "metrics.k8s.io"))
+            cluster.info.as_ref().is_some_and(|i| {
+                i.resources
+                    .iter()
+                    .any(|r| r.ar.kind == k && r.ar.group == "metrics.k8s.io")
+            })
         };
         let ar = match kind.as_str() {
             "Pod" if sirve("PodMetrics") => k8s::metricas::ar_pods(),
             "Node" if sirve("NodeMetrics") => k8s::metricas::ar_nodes(),
             _ => return,
         };
-        let Some(target) = pane.watch_target.clone() else { return };
+        let Some(target) = pane.watch_target.clone() else {
+            return;
+        };
         let bridge = self.bridge.clone();
         let rt = &self.rt;
         let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
@@ -837,14 +881,18 @@ impl App {
     /// Watch auxiliar de endpoints, para la columna de backends de Services.
     fn seguir_endpoints(&mut self, pane_id: u64) {
         let token = self.token();
-        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
         // EndpointSlice es lo actual; Endpoints quedó deprecado pero es lo único
         // que hay en clusters viejos.
         let ar = {
             let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
                 return;
             };
-            let Some(cluster) = self.cluster_de(pane) else { return };
+            let Some(cluster) = self.cluster_de(pane) else {
+                return;
+            };
             let sirve = |k: &str| {
                 cluster
                     .info
@@ -864,7 +912,9 @@ impl App {
         let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(target) = pane.watch_target.clone() else { return };
+        let Some(target) = pane.watch_target.clone() else {
+            return;
+        };
         pane.endpoints_token = token;
         pane.endpoints_tarea = Some(rt.spawn(async move {
             k8s::endpoints::seguir(client, ar, target, token, bridge).await;
@@ -879,6 +929,16 @@ impl App {
             }
         }
         // `seleccionar` no corre si el panel todavía no tenía recurso abierto.
+        self.guardar_layout();
+    }
+
+    pub fn alternar_favorito(&mut self, pane_id: u64, key: &str) {
+        let Some(pane) = self.pane(pane_id) else {
+            return;
+        };
+        if !pane.favoritos.remove(key) {
+            pane.favoritos.insert(key.to_string());
+        }
         self.guardar_layout();
     }
 
@@ -996,8 +1056,12 @@ impl App {
 
     /// Levanta el forward configurado en el diálogo.
     pub fn abrir_forward(&mut self) {
-        let Some(d) = self.dialogo_pf.take() else { return };
-        let Some(puerto) = d.puertos.get(d.sel).cloned() else { return };
+        let Some(d) = self.dialogo_pf.take() else {
+            return;
+        };
+        let Some(puerto) = d.puertos.get(d.sel).cloned() else {
+            return;
+        };
         let Some(client) = self
             .clusters
             .get(&d.contexto)
@@ -1019,11 +1083,10 @@ impl App {
             );
             return;
         }
-        if self
-            .forwards
-            .iter()
-            .any(|f| f.bind == k8s::portforward::bind_de(d.alias, &d.servicio) && f.puerto_local == puerto_local)
-        {
+        if self.forwards.iter().any(|f| {
+            f.bind == k8s::portforward::bind_de(d.alias, &d.servicio)
+                && f.puerto_local == puerto_local
+        }) {
             self.toast("ya hay un forward escuchando en esa dirección", true);
             return;
         }
@@ -1114,7 +1177,9 @@ impl App {
         let bridge = self.bridge.clone();
         // pkexec bloquea hasta que el usuario responde el diálogo.
         self.rt.spawn_blocking(move || {
-            let error = crate::hosts::aplicar(&entradas).err().map(|e| format!("{e:#}"));
+            let error = crate::hosts::aplicar(&entradas)
+                .err()
+                .map(|e| format!("{e:#}"));
             bridge.send(K8sEvent::Alias { id, error });
         });
     }
@@ -1136,17 +1201,21 @@ impl App {
             query: String::new(),
             hits: Vec::new(),
             buscando: false,
+            parcial: false,
             token: 0,
             sel: 0,
             query_buscada: String::new(),
             desde_cambio: 0.0,
+            tarea: None,
         });
     }
 
     /// Dispara la búsqueda si el texto se estabilizó (debounce) y tiene
     /// al menos dos caracteres: con uno solo el barrido no filtra nada.
     fn quizas_buscar(&mut self, dt: f32, ctx: &egui::Context) {
-        let Some(p) = self.palette.as_mut() else { return };
+        let Some(p) = self.palette.as_mut() else {
+            return;
+        };
         p.desde_cambio += dt;
         let query = p.query.trim().to_string();
         if query == p.query_buscada || query.chars().count() < 2 {
@@ -1162,18 +1231,26 @@ impl App {
         }
         p.query_buscada = query.clone();
         p.buscando = true;
+        p.parcial = false;
+        if let Some(tarea) = p.tarea.take() {
+            tarea.abort();
+        }
 
         let pane_id = p.pane;
         let token = self.token();
         if let Some(p) = self.palette.as_mut() {
             p.token = token;
         }
-        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
         let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
             return;
         };
         let ns = pane.ns_sel.clone();
-        let Some(cluster) = self.cluster_de(pane) else { return };
+        let Some(cluster) = self.cluster_de(pane) else {
+            return;
+        };
         // Solo los kinds buscables que este cluster realmente sirve.
         let recursos: Vec<_> = crate::k8s::search::KINDS_BUSCABLES
             .iter()
@@ -1187,9 +1264,12 @@ impl App {
             })
             .collect();
         let bridge = self.bridge.clone();
-        self.rt.spawn(async move {
+        let tarea = self.rt.spawn(async move {
             crate::k8s::search::buscar(client, recursos, query, ns, token, bridge).await;
         });
+        if let Some(p) = self.palette.as_mut() {
+            p.tarea = Some(tarea);
+        }
     }
 
     // ------------------------------------------------------------- detalle
@@ -1307,14 +1387,20 @@ impl App {
     /// valores de un Secret.
     pub fn alternar_revelar(&mut self, pane_id: u64) {
         let token = self.token();
-        let Some(client) = self.client_del_pane(pane_id) else { return };
-        let Some(ar) = self.ar_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
+        let Some(ar) = self.ar_del_pane(pane_id) else {
+            return;
+        };
         let bridge = self.bridge.clone();
         let rt_ref = &self.rt;
         let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(det) = pane.detalle.as_mut() else { return };
+        let Some(det) = pane.detalle.as_mut() else {
+            return;
+        };
         det.revelar = !det.revelar;
         det.yaml = None;
         det.yaml_edit = None;
@@ -1343,7 +1429,9 @@ impl App {
             return;
         };
         let ar = pane.item.as_ref().map(|i| i.res.ar.clone());
-        let Some(det) = pane.detalle.as_mut() else { return };
+        let Some(det) = pane.detalle.as_mut() else {
+            return;
+        };
         let Some(ns) = det.ns.clone() else { return };
         det.mapa_token = token;
         det.mapa = None;
@@ -1422,14 +1510,15 @@ impl App {
                     k8s::actions::escalar(client, ar, c.ns, c.name, n, ctx, bridge).await;
                 });
             }
+            Verbo::AplicarYaml(yaml) => {
+                self.rt.spawn(async move {
+                    k8s::actions::aplicar_yaml(client, ar, yaml, c.name, c.ns, ctx, bridge).await;
+                });
+            }
         }
     }
 
     pub fn aplicar_yaml(&mut self, pane_id: u64, yaml: String) {
-        let (Some(client), Some(ar)) = (self.client_del_pane(pane_id), self.ar_del_pane(pane_id))
-        else {
-            return;
-        };
         // El nombre/ns esperados salen del detalle abierto, no del YAML.
         let Some((name, ns, kind, revelar)) = self
             .panes
@@ -1448,10 +1537,12 @@ impl App {
             );
             return;
         }
-        let ctx = self.contexto_del_pane(pane_id);
-        let bridge = self.bridge.clone();
-        self.rt.spawn(async move {
-            k8s::actions::aplicar_yaml(client, ar, yaml, name, ns, ctx, bridge).await;
+        self.confirm = Some(Confirmacion {
+            pane: pane_id,
+            verbo: Verbo::AplicarYaml(yaml),
+            kind,
+            ns,
+            name,
         });
     }
 
@@ -1461,9 +1552,13 @@ impl App {
         let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(store) = pane.store.as_ref() else { return };
+        let Some(store) = pane.store.as_ref() else {
+            return;
+        };
         let Some(obj) = store.objeto(key) else { return };
-        let Some(ns) = kube::ResourceExt::namespace(obj) else { return };
+        let Some(ns) = kube::ResourceExt::namespace(obj) else {
+            return;
+        };
         let pod = kube::ResourceExt::name_any(obj);
         let contenedores = contenedores_de(obj);
 
@@ -1490,13 +1585,17 @@ impl App {
 
     pub fn reiniciar_logs(&mut self, pane_id: u64) {
         let token = self.token();
-        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
         let bridge = self.bridge.clone();
         let rt = &self.rt;
         let Some(pane) = self.panes.iter_mut().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(Bottom::Logs(v)) = pane.bottom.as_mut() else { return };
+        let Some(Bottom::Logs(v)) = pane.bottom.as_mut() else {
+            return;
+        };
 
         if let Some(t) = v.tarea.take() {
             t.abort();
@@ -1521,13 +1620,19 @@ impl App {
 
     pub fn abrir_shell(&mut self, pane_id: u64, key: &str) {
         let token = self.token();
-        let Some(client) = self.client_del_pane(pane_id) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
         let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
             return;
         };
-        let Some(store) = pane.store.as_ref() else { return };
+        let Some(store) = pane.store.as_ref() else {
+            return;
+        };
         let Some(obj) = store.objeto(key) else { return };
-        let Some(ns) = kube::ResourceExt::namespace(obj) else { return };
+        let Some(ns) = kube::ResourceExt::namespace(obj) else {
+            return;
+        };
         let pod = kube::ResourceExt::name_any(obj);
         let contenedor = contenedores_de(obj).first().cloned();
 
@@ -1658,7 +1763,10 @@ impl App {
 
         // KUBO_TEST_MAPA=ns/svc (o KUBO_TEST_WMAPA=ns/deploy): navega al
         // kind y abre el mapa.
-        let (var, kind_buscado) = if std::env::var("KUBO_TEST_WMAPA").map(|v| !v.is_empty()).unwrap_or(false) {
+        let (var, kind_buscado) = if std::env::var("KUBO_TEST_WMAPA")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+        {
             ("KUBO_TEST_WMAPA", "Deployment")
         } else {
             ("KUBO_TEST_MAPA", "Service")
@@ -1718,6 +1826,11 @@ impl App {
                         .as_ref()
                         .map(|i| i.res.key())
                         .or_else(|| p.recurso_pendiente.clone()),
+                    favoritos: {
+                        let mut favoritos: Vec<_> = p.favoritos.iter().cloned().collect();
+                        favoritos.sort();
+                        favoritos
+                    },
                 })
                 .collect(),
         });
@@ -1745,10 +1858,7 @@ impl App {
                 info,
                 client,
             } => {
-                let Some((_, cluster)) = self
-                    .clusters
-                    .iter_mut()
-                    .find(|(_, c)| c.token == token)
+                let Some((_, cluster)) = self.clusters.iter_mut().find(|(_, c)| c.token == token)
                 else {
                     return;
                 };
@@ -1767,10 +1877,7 @@ impl App {
                     c.error = Some(error);
                 }
             }
-            K8sEvent::Permisos {
-                clave,
-                permisos,
-            } => {
+            K8sEvent::Permisos { clave, permisos } => {
                 // Se guarda en el cluster, no en el panel: el RBAC es del
                 // contexto y lo aprovechan todos los paneles que lo miran.
                 let contextos: Vec<String> = self
@@ -1911,11 +2018,11 @@ impl App {
                 }
                 if let Some(pane_id) = init_listo {
                     // Navegación diferida: el usuario clickeó "ir al recurso".
-                    let pendiente = self
-                        .pane(pane_id)
-                        .and_then(|p| p.pendiente_detalle.take());
+                    let pendiente = self.pane(pane_id).and_then(|p| p.pendiente_detalle.take());
                     // KUBO_TEST_TAB=Yaml|Eventos|Mapa fija la pestaña al navegar.
-                    let tab_forzada = std::env::var("KUBO_TEST_TAB").ok().filter(|s| !s.is_empty());
+                    let tab_forzada = std::env::var("KUBO_TEST_TAB")
+                        .ok()
+                        .filter(|s| !s.is_empty());
                     if let Some(key) = pendiente {
                         let existe = self
                             .panes
@@ -1928,7 +2035,8 @@ impl App {
                             tracing::debug!(key, "navegación: detalle diferido abierto");
                             self.abrir_detalle(pane_id, &key);
                             if let Some(t) = tab_forzada {
-                                if let Some(d) = self.pane(pane_id).and_then(|p| p.detalle.as_mut()) {
+                                if let Some(d) = self.pane(pane_id).and_then(|p| p.detalle.as_mut())
+                                {
                                     d.tab = match t.as_str() {
                                         "Yaml" => TabDetalle::Yaml,
                                         "Eventos" => TabDetalle::Eventos,
@@ -2019,11 +2127,17 @@ impl App {
                     }
                 }
             }
-            K8sEvent::Search { token, hits } => {
+            K8sEvent::Search {
+                token,
+                hits,
+                completo,
+                parcial,
+            } => {
                 if let Some(p) = self.palette.as_mut() {
                     if p.token == token {
                         p.hits = hits;
-                        p.buscando = false;
+                        p.buscando = !completo;
+                        p.parcial = parcial;
                     }
                 }
             }

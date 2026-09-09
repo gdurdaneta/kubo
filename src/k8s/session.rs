@@ -162,16 +162,16 @@ pub async fn namespaces(client: Client) -> Vec<String> {
         plural: "namespaces".into(),
     };
     let api: Api<kube::api::DynamicObject> = Api::all_with(client, &ar);
-    match api.list(&ListParams::default().limit(500)).await {
-        Ok(list) => {
-            let mut names: Vec<String> = list
-                .items
-                .into_iter()
-                .filter_map(|o| o.metadata.name)
-                .collect();
+    match super::listar_todo(&api, &ListParams::default().limit(500)).await {
+        Ok(items) => {
+            let mut names: Vec<String> =
+                items.into_iter().filter_map(|o| o.metadata.name).collect();
             names.sort();
             names
         }
-        Err(_) => Vec::new(),
+        Err(e) => {
+            tracing::warn!(error = %e, "no se pudieron listar los namespaces");
+            Vec::new()
+        }
     }
 }

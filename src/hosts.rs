@@ -140,7 +140,10 @@ fn ruta_temporal() -> Result<PathBuf> {
 /// de tokio, nunca en el hilo de la UI.
 pub fn aplicar(entradas: &[(IpAddr, String)]) -> Result<()> {
     if !soportado() {
-        bail!("resolver por nombre no está soportado acá: {}", motivo_no_soportado());
+        bail!(
+            "resolver por nombre no está soportado acá: {}",
+            motivo_no_soportado()
+        );
     }
     for (_, n) in entradas {
         if !nombre_valido(n) {

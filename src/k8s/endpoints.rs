@@ -142,7 +142,10 @@ fn backends_de(o: &DynamicObject) -> Vec<Backend> {
             .get("nodeName")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let zona = e.get("zone").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let zona = e
+            .get("zone")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         for ip in e
             .get("addresses")
             .and_then(|a| a.as_array())
@@ -179,8 +182,8 @@ pub async fn backends(
         let lp = kube::api::ListParams::default()
             .labels(&format!("kubernetes.io/service-name={svc}"))
             .limit(100);
-        match api.list(&lp).await {
-            Ok(l) => l.items.iter().flat_map(backends_de).collect(),
+        match super::listar_todo(&api, &lp).await {
+            Ok(items) => items.iter().flat_map(backends_de).collect(),
             Err(e) => {
                 tracing::debug!(error = %e, "backends: no se pudieron listar los slices");
                 Vec::new()
@@ -216,7 +219,12 @@ fn backends_endpoints_viejo(o: &DynamicObject) -> Vec<Backend> {
             })
             .unwrap_or_default();
         for (campo, listo) in [("addresses", true), ("notReadyAddresses", false)] {
-            for a in s.get(campo).and_then(|a| a.as_array()).into_iter().flatten() {
+            for a in s
+                .get(campo)
+                .and_then(|a| a.as_array())
+                .into_iter()
+                .flatten()
+            {
                 let Some(ip) = a.get("ip").and_then(|v| v.as_str()) else {
                     continue;
                 };
@@ -242,13 +250,7 @@ fn backends_endpoints_viejo(o: &DynamicObject) -> Vec<Backend> {
 }
 
 /// Sigue los endpoints del ámbito y publica el mapa `ns/servicio -> conteo`.
-pub async fn seguir(
-    client: Client,
-    ar: ApiResource,
-    target: Target,
-    token: u64,
-    bridge: UiBridge,
-) {
+pub async fn seguir(client: Client, ar: ApiResource, target: Target, token: u64, bridge: UiBridge) {
     let slices = ar.kind == "EndpointSlice";
     let api: Api<DynamicObject> = match &target {
         Target::Namespace(ns) => Api::namespaced_with(client, ns, &ar),
@@ -271,7 +273,14 @@ pub async fn seguir(
     loop {
         tokio::select! {
             item = stream.next() => {
-                let Some(item) = item else { return };
+                let Some(item) = item else {
+                    tracing::warn!("endpoints: el watch terminó");
+                    bridge.toast(
+                        "el seguimiento de endpoints terminó; refrescá la vista para reconectar",
+                        true,
+                    );
+                    return;
+                };
                 match item {
                     Ok(Event::Init) => por_objeto.clear(),
                     Ok(Event::InitApply(o)) | Ok(Event::Apply(o)) => {
@@ -339,7 +348,13 @@ mod tests {
         }));
         let (clave, c) = leer(&o, true).expect("se lee el slice");
         assert_eq!(clave, "produccion/api");
-        assert_eq!(c, Conteo { listos: 3, total: 4 });
+        assert_eq!(
+            c,
+            Conteo {
+                listos: 3,
+                total: 4
+            }
+        );
     }
 
     #[test]
@@ -432,7 +447,13 @@ mod tests {
             },
             "endpoints": []
         }));
-        assert_eq!(leer(&o, true).unwrap().1, Conteo { listos: 0, total: 0 });
+        assert_eq!(
+            leer(&o, true).unwrap().1,
+            Conteo {
+                listos: 0,
+                total: 0
+            }
+        );
     }
 
     #[test]
@@ -447,6 +468,12 @@ mod tests {
         }));
         let (clave, c) = leer(&o, false).unwrap();
         assert_eq!(clave, "default/legacy");
-        assert_eq!(c, Conteo { listos: 2, total: 3 });
+        assert_eq!(
+            c,
+            Conteo {
+                listos: 2,
+                total: 3
+            }
+        );
     }
 }

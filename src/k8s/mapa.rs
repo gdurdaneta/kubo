@@ -84,7 +84,13 @@ fn ar_core(kind: &str, plural: &str) -> ApiResource {
     }
 }
 
-pub async fn fetch_service(client: Client, ns: String, service: String, token: u64, bridge: UiBridge) {
+pub async fn fetch_service(
+    client: Client,
+    ns: String,
+    service: String,
+    token: u64,
+    bridge: UiBridge,
+) {
     let data = armar(client, &ns, &service).await;
     bridge.send(K8sEvent::Mapa {
         token,
@@ -114,7 +120,8 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
     };
 
     // --- el service ------------------------------------------------------
-    let svc_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), ns, &ar_core("Service", "services"));
+    let svc_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), ns, &ar_core("Service", "services"));
     let svc = match svc_api.get(service).await {
         Ok(s) => s,
         Err(e) => {
@@ -172,13 +179,14 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
             .map(|(k, v)| format!("{k}={v}"))
             .collect::<Vec<_>>()
             .join(",");
-        let pod_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), ns, &ar_core("Pod", "pods"));
-        match pod_api.list(&ListParams::default().labels(&sel).limit(500)).await {
-            Ok(list) => {
+        let pod_api: Api<DynamicObject> =
+            Api::namespaced_with(client.clone(), ns, &ar_core("Pod", "pods"));
+        match super::listar_todo(&pod_api, &ListParams::default().labels(&sel).limit(500)).await {
+            Ok(items) => {
                 // Agrupados por su dueño directo; los ReplicaSet se resuelven
                 // después a su Deployment.
                 let mut grupos: BTreeMap<(String, String), Vec<PodDot>> = BTreeMap::new();
-                for p in list.items {
+                for p in items {
                     let dueño = p
                         .metadata
                         .owner_references
@@ -190,7 +198,12 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
                     let ready = status
                         .and_then(|s| s.get("containerStatuses"))
                         .and_then(|v| v.as_array())
-                        .map(|a| !a.is_empty() && a.iter().all(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)))
+                        .map(|a| {
+                            !a.is_empty()
+                                && a.iter().all(|c| {
+                                    c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)
+                                })
+                        })
                         .unwrap_or(false);
                     let estado = status
                         .and_then(|s| s.get("phase"))
@@ -205,14 +218,17 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
                 }
 
                 // ReplicaSet → Deployment (una consulta por RS distinto).
-                let rs_api: Api<DynamicObject> =
-                    Api::namespaced_with(client.clone(), ns, &ApiResource {
+                let rs_api: Api<DynamicObject> = Api::namespaced_with(
+                    client.clone(),
+                    ns,
+                    &ApiResource {
                         group: "apps".into(),
                         version: "v1".into(),
                         api_version: "apps/v1".into(),
                         kind: "ReplicaSet".into(),
                         plural: "replicasets".into(),
-                    });
+                    },
+                );
                 for ((kind, name), pods) in grupos {
                     let (kind, name) = if kind == "ReplicaSet" {
                         match rs_api.get(&name).await.ok().and_then(|rs| {
@@ -230,7 +246,11 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
                     };
                     // Puede haber varios RS del mismo Deployment (rollout en
                     // curso): se fusionan.
-                    match out.workloads.iter_mut().find(|w| w.kind == kind && w.name == name) {
+                    match out
+                        .workloads
+                        .iter_mut()
+                        .find(|w| w.kind == kind && w.name == name)
+                    {
                         Some(w) => w.pods.extend(pods),
                         None => out.workloads.push(Workload { kind, name, pods }),
                     }
@@ -244,16 +264,24 @@ async fn armar(client: Client, ns: &str, service: &str) -> MapaData {
     }
 
     // --- ingresses que apuntan al service --------------------------------
-    let ing_api: Api<DynamicObject> = Api::namespaced_with(client, ns, &ApiResource {
-        group: "networking.k8s.io".into(),
-        version: "v1".into(),
-        api_version: "networking.k8s.io/v1".into(),
-        kind: "Ingress".into(),
-        plural: "ingresses".into(),
-    });
-    if let Ok(list) = ing_api.list(&ListParams::default().limit(200)).await {
-        for ing in list.items {
-            let reglas = ing.data.get("spec").and_then(|s| s.get("rules")).and_then(|v| v.as_array());
+    let ing_api: Api<DynamicObject> = Api::namespaced_with(
+        client,
+        ns,
+        &ApiResource {
+            group: "networking.k8s.io".into(),
+            version: "v1".into(),
+            api_version: "networking.k8s.io/v1".into(),
+            kind: "Ingress".into(),
+            plural: "ingresses".into(),
+        },
+    );
+    if let Ok(items) = super::listar_todo(&ing_api, &ListParams::default().limit(200)).await {
+        for ing in items {
+            let reglas = ing
+                .data
+                .get("spec")
+                .and_then(|s| s.get("rules"))
+                .and_then(|v| v.as_array());
             let Some(reglas) = reglas else { continue };
             let mut hosts = Vec::new();
             let mut apunta = false;
@@ -330,10 +358,7 @@ async fn armar_workload(
     // CronJobs lo llevan un nivel más adentro.
     let spec = obj.data.get("spec");
     let (pod_spec, labels) = match ar.kind.as_str() {
-        "Pod" => (
-            spec,
-            obj.data.get("metadata").and_then(|m| m.get("labels")),
-        ),
+        "Pod" => (spec, obj.data.get("metadata").and_then(|m| m.get("labels"))),
         "CronJob" => {
             let tpl = spec
                 .and_then(|s| s.get("jobTemplate"))
@@ -341,14 +366,16 @@ async fn armar_workload(
                 .and_then(|s| s.get("template"));
             (
                 tpl.and_then(|t| t.get("spec")),
-                tpl.and_then(|t| t.get("metadata")).and_then(|m| m.get("labels")),
+                tpl.and_then(|t| t.get("metadata"))
+                    .and_then(|m| m.get("labels")),
             )
         }
         _ => {
             let tpl = spec.and_then(|s| s.get("template"));
             (
                 tpl.and_then(|t| t.get("spec")),
-                tpl.and_then(|t| t.get("metadata")).and_then(|m| m.get("labels")),
+                tpl.and_then(|t| t.get("metadata"))
+                    .and_then(|m| m.get("labels")),
             )
         }
     };
@@ -374,10 +401,18 @@ async fn armar_workload(
         }
         if let Some(envfrom) = c.get("envFrom").and_then(|v| v.as_array()) {
             for e in envfrom {
-                if let Some(n) = e.get("configMapRef").and_then(|r| r.get("name")).and_then(|v| v.as_str()) {
+                if let Some(n) = e
+                    .get("configMapRef")
+                    .and_then(|r| r.get("name"))
+                    .and_then(|v| v.as_str())
+                {
                     anotar(&mut cms, n, "envFrom".into());
                 }
-                if let Some(n) = e.get("secretRef").and_then(|r| r.get("name")).and_then(|v| v.as_str()) {
+                if let Some(n) = e
+                    .get("secretRef")
+                    .and_then(|r| r.get("name"))
+                    .and_then(|v| v.as_str())
+                {
                     anotar(&mut secs, n, "envFrom".into());
                 }
             }
@@ -407,10 +442,18 @@ async fn armar_workload(
     if let Some(vols) = pod_spec.get("volumes").and_then(|v| v.as_array()) {
         for v in vols {
             let vol = v.get("name").and_then(|n| n.as_str()).unwrap_or("?");
-            if let Some(n) = v.get("configMap").and_then(|c| c.get("name")).and_then(|x| x.as_str()) {
+            if let Some(n) = v
+                .get("configMap")
+                .and_then(|c| c.get("name"))
+                .and_then(|x| x.as_str())
+            {
                 anotar(&mut cms, n, format!("volumen {vol}"));
             }
-            if let Some(n) = v.get("secret").and_then(|c| c.get("secretName")).and_then(|x| x.as_str()) {
+            if let Some(n) = v
+                .get("secret")
+                .and_then(|c| c.get("secretName"))
+                .and_then(|x| x.as_str())
+            {
                 anotar(&mut secs, n, format!("volumen {vol}"));
             }
             if let Some(n) = v
@@ -421,12 +464,24 @@ async fn armar_workload(
                 anotar(&mut pvcs, n, format!("volumen {vol}"));
             }
             // Volúmenes projected: mezclan varias fuentes.
-            if let Some(fuentes) = v.get("projected").and_then(|p| p.get("sources")).and_then(|x| x.as_array()) {
+            if let Some(fuentes) = v
+                .get("projected")
+                .and_then(|p| p.get("sources"))
+                .and_then(|x| x.as_array())
+            {
                 for f in fuentes {
-                    if let Some(n) = f.get("configMap").and_then(|c| c.get("name")).and_then(|x| x.as_str()) {
+                    if let Some(n) = f
+                        .get("configMap")
+                        .and_then(|c| c.get("name"))
+                        .and_then(|x| x.as_str())
+                    {
                         anotar(&mut cms, n, format!("projected {vol}"));
                     }
-                    if let Some(n) = f.get("secret").and_then(|c| c.get("name")).and_then(|x| x.as_str()) {
+                    if let Some(n) = f
+                        .get("secret")
+                        .and_then(|c| c.get("name"))
+                        .and_then(|x| x.as_str())
+                    {
                         anotar(&mut secs, n, format!("projected {vol}"));
                     }
                 }
@@ -459,9 +514,14 @@ async fn armar_workload(
         };
         let api: Api<DynamicObject> = Api::namespaced_with(client.clone(), ns, &ar);
         async move {
-            api.list(&ListParams::default().limit(500))
+            super::listar_todo(&api, &ListParams::default().limit(500))
                 .await
-                .map(|l| l.items.into_iter().filter_map(|o| o.metadata.name).collect::<Vec<_>>())
+                .map(|items| {
+                    items
+                        .into_iter()
+                        .filter_map(|o| o.metadata.name)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default()
         }
     };
@@ -503,8 +563,8 @@ async fn armar_workload(
     if !labels.is_empty() {
         let svc_api: Api<DynamicObject> =
             Api::namespaced_with(client.clone(), ns, &ar_core("Service", "services"));
-        if let Ok(list) = svc_api.list(&ListParams::default().limit(500)).await {
-            for svc in list.items {
+        if let Ok(items) = super::listar_todo(&svc_api, &ListParams::default().limit(500)).await {
+            for svc in items {
                 let sel = svc
                     .data
                     .get("spec")
@@ -515,7 +575,8 @@ async fn armar_workload(
                     continue;
                 }
                 let matchea = sel.iter().all(|(k, v)| {
-                    v.as_str().is_some_and(|v| labels.get(k).map(String::as_str) == Some(v))
+                    v.as_str()
+                        .is_some_and(|v| labels.get(k).map(String::as_str) == Some(v))
                 });
                 if matchea {
                     out.services.push(svc.name_any());
@@ -526,16 +587,24 @@ async fn armar_workload(
 
     // ---- ingresses que apuntan a esos services ---------------------------
     if !out.services.is_empty() {
-        let ing_api: Api<DynamicObject> = Api::namespaced_with(client, ns, &ApiResource {
-            group: "networking.k8s.io".into(),
-            version: "v1".into(),
-            api_version: "networking.k8s.io/v1".into(),
-            kind: "Ingress".into(),
-            plural: "ingresses".into(),
-        });
-        if let Ok(list) = ing_api.list(&ListParams::default().limit(200)).await {
-            for ing in list.items {
-                let reglas = ing.data.get("spec").and_then(|s| s.get("rules")).and_then(|v| v.as_array());
+        let ing_api: Api<DynamicObject> = Api::namespaced_with(
+            client,
+            ns,
+            &ApiResource {
+                group: "networking.k8s.io".into(),
+                version: "v1".into(),
+                api_version: "networking.k8s.io/v1".into(),
+                kind: "Ingress".into(),
+                plural: "ingresses".into(),
+            },
+        );
+        if let Ok(items) = super::listar_todo(&ing_api, &ListParams::default().limit(200)).await {
+            for ing in items {
+                let reglas = ing
+                    .data
+                    .get("spec")
+                    .and_then(|s| s.get("rules"))
+                    .and_then(|v| v.as_array());
                 let Some(reglas) = reglas else { continue };
                 let mut hosts = Vec::new();
                 let mut apunta = false;

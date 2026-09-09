@@ -7,8 +7,15 @@ use crate::theme;
 
 /// Una fila de la lista: saltar a una vista, o abrir un objeto concreto.
 enum Fila {
-    Kind { label: String, kind: String },
-    Recurso { kind: String, ns: Option<String>, name: String },
+    Kind {
+        label: String,
+        kind: String,
+    },
+    Recurso {
+        kind: String,
+        ns: Option<String>,
+        name: String,
+    },
 }
 
 pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
@@ -47,7 +54,7 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
             filas,
             p.buscando,
             p.query.trim().chars().count() < 2,
-            p.hits.len() >= 60,
+            p.parcial || p.hits.len() >= 60,
         )
     };
 
@@ -121,8 +128,10 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
                 for (i, fila) in filas.iter().enumerate() {
                     let activo = i == sel;
                     let alto = 26.0;
-                    let (rect, resp) = ui
-                        .allocate_exact_size(egui::vec2(ui.available_width(), alto), egui::Sense::click());
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), alto),
+                        egui::Sense::click(),
+                    );
                     if activo {
                         ui.painter().rect_filled(
                             rect,
@@ -130,8 +139,11 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
                             theme::ACENTO.linear_multiply(0.25),
                         );
                     } else if resp.hovered() {
-                        ui.painter()
-                            .rect_filled(rect, egui::CornerRadius::same(4), theme::PANEL_ALT);
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::CornerRadius::same(4),
+                            theme::PANEL_ALT,
+                        );
                     }
                     let (icono, principal, secundario, color) = match fila {
                         Fila::Kind { label, .. } => (

@@ -99,10 +99,9 @@ pub async fn fetch_events(
         .limit(200);
 
     let t0 = std::time::Instant::now();
-    let items = match api.list(&lp).await {
-        Ok(list) => {
-            let mut rows: Vec<EventRow> = list
-                .items
+    let items = match super::listar_todo(&api, &lp).await {
+        Ok(items) => {
+            let mut rows: Vec<EventRow> = items
                 .into_iter()
                 .map(|o| {
                     let d = &o.data;
@@ -136,8 +135,16 @@ pub async fn fetch_events(
             rows.sort_by_key(|e| std::cmp::Reverse(e.last));
             rows
         }
-        Err(_) => Vec::new(),
+        Err(e) => {
+            tracing::warn!(error = %e, "detalle: no se pudieron listar los eventos");
+            bridge.toast(format!("no se pudieron cargar los eventos: {e}"), true);
+            Vec::new()
+        }
     };
-    tracing::info!(n = items.len(), ms = t0.elapsed().as_millis(), "detalle: eventos listos");
+    tracing::info!(
+        n = items.len(),
+        ms = t0.elapsed().as_millis(),
+        "detalle: eventos listos"
+    );
     bridge.send(K8sEvent::ObjectEvents { token, items });
 }

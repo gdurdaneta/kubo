@@ -21,7 +21,10 @@ fn ruta(server: &str) -> Option<PathBuf> {
     // no deja rastro del endpoint en el nombre.
     let mut h = std::collections::hash_map::DefaultHasher::new();
     server.hash(&mut h);
-    Some(base.join("discovery").join(format!("{:016x}.json", h.finish())))
+    Some(
+        base.join("discovery")
+            .join(format!("{:016x}.json", h.finish())),
+    )
 }
 
 /// Copia guardada, si existe y se puede parsear. `true` en el segundo campo

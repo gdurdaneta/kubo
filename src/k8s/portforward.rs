@@ -117,13 +117,16 @@ pub async fn elegir_pod(
         .collect();
 
     let pods: Api<Pod> = Api::namespaced(client, ns);
-    let lista = pods
-        .list(&ListParams::default().labels(&etiquetas.join(",")).limit(100))
-        .await
-        .context("no se pudieron listar los pods del Service")?;
+    let items = super::listar_todo(
+        &pods,
+        &ListParams::default()
+            .labels(&etiquetas.join(","))
+            .limit(100),
+    )
+    .await
+    .context("no se pudieron listar los pods del Service")?;
 
-    let pod = lista
-        .items
+    let pod = items
         .iter()
         .find(|p| pod_listo(p))
         .ok_or_else(|| anyhow!("ningún pod del Service está Ready"))?;
@@ -145,18 +148,16 @@ fn pod_listo(p: &Pod) -> bool {
     p.status
         .as_ref()
         .and_then(|s| s.conditions.as_ref())
-        .is_some_and(|cs| {
-            cs.iter()
-                .any(|c| c.type_ == "Ready" && c.status == "True")
-        })
+        .is_some_and(|cs| cs.iter().any(|c| c.type_ == "Ready" && c.status == "True"))
 }
 
 /// `targetPort: http` se resuelve contra los `containerPort` del pod.
 fn resolver_puerto_nombrado(p: &Pod, nombre: &str) -> Option<u16> {
     p.spec.as_ref()?.containers.iter().find_map(|c| {
-        c.ports.as_ref()?.iter().find_map(|cp| {
-            (cp.name.as_deref() == Some(nombre)).then_some(cp.container_port as u16)
-        })
+        c.ports
+            .as_ref()?
+            .iter()
+            .find_map(|cp| (cp.name.as_deref() == Some(nombre)).then_some(cp.container_port as u16))
     })
 }
 
@@ -365,7 +366,13 @@ mod tests {
 
         let bridge = UiBridge::new(flume::unbounded().0, egui::Context::default());
         let tarea = tokio::spawn(servir(
-            client, ns.to_string(), pod, puerto_pod, addr, 1, bridge,
+            client,
+            ns.to_string(),
+            pod,
+            puerto_pod,
+            addr,
+            1,
+            bridge,
         ));
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
@@ -386,7 +393,11 @@ mod tests {
         tarea.abort();
 
         let texto = String::from_utf8_lossy(&resp);
-        println!("--- respuesta ({} bytes) ---\n{}", resp.len(), &texto[..texto.len().min(300)]);
+        println!(
+            "--- respuesta ({} bytes) ---\n{}",
+            resp.len(),
+            &texto[..texto.len().min(300)]
+        );
         assert!(
             texto.starts_with("HTTP/1."),
             "no volvió una respuesta HTTP por el túnel"

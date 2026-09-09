@@ -140,7 +140,11 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
                 .fill(theme::FONDO)
                 .stroke(egui::Stroke::new(
                     1.0,
-                    if es_activo { theme::ACENTO } else { theme::BORDE },
+                    if es_activo {
+                        theme::ACENTO
+                    } else {
+                        theme::BORDE
+                    },
                 ))
                 .show(ui, |ui| {
                     dibujar_pane(app, ui, *id, n, &mut accion);
@@ -149,7 +153,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
     });
 
     // Ctrl+K abre la paleta sobre el último panel usado.
-    if ui.ctx().input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)) {
+    if ui
+        .ctx()
+        .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::K))
+    {
         if app.palette.is_some() {
             app.palette = None;
         } else if let Some(id) = app.pane_activo() {
@@ -168,8 +175,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
     // que si la shell embebida tiene el foco la tecla es suya y no llega acá.
     if !modal_abierto
         && ui
-        .ctx()
-        .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T))
+            .ctx()
+            .input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T))
     {
         if app.panes.len() < MAX_PANES {
             accion = Accion::AbrirPane;
@@ -467,7 +474,8 @@ fn dibujar_pane(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accio
             } else {
                 0.0
             };
-            let ancho_tabla = (total - ancho_detalle - if hay_detalle { sep } else { 0.0 }).max(0.0);
+            let ancho_tabla =
+                (total - ancho_detalle - if hay_detalle { sep } else { 0.0 }).max(0.0);
 
             ui.horizontal_top(|ui| {
                 ui.allocate_ui_with_layout(

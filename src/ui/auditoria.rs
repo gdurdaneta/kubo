@@ -64,9 +64,7 @@ pub fn vista(_app: &mut App, ui: &mut egui::Ui, _pane_id: u64, _accion: &mut Acc
                                 egui::RichText::new(&e.verbo).strong(),
                             );
                             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                            ui.add(
-                                egui::Label::new(format!("{} «{}»", e.kind, e.name)).truncate(),
-                            );
+                            ui.add(egui::Label::new(format!("{} «{}»", e.kind, e.name)).truncate());
                             if let Some(d) = &e.detalle {
                                 ui.colored_label(theme::TEXTO_TENUE, d);
                             }

@@ -33,7 +33,13 @@ fn repartir_anchos(cabeceras: &[ColSpec], disponible: f32, sep: f32) -> (Vec<f32
         return (deseados, false);
     }
 
-    let piso = |i: usize| if i == 0 { ANCHO_MIN_NOMBRE } else { ANCHO_MIN_COL };
+    let piso = |i: usize| {
+        if i == 0 {
+            ANCHO_MIN_NOMBRE
+        } else {
+            ANCHO_MIN_COL
+        }
+    };
     let minimo: f32 = (0..deseados.len()).map(piso).sum();
     if minimo + huecos > disponible {
         // Ni encogidas al máximo entran: se scrollea.
@@ -84,7 +90,10 @@ fn tiene_mapa(kind: &str) -> bool {
 
 /// Kinds que soportan escalar y rollout restart.
 fn escalable(kind: &str) -> bool {
-    matches!(kind, "Deployment" | "StatefulSet" | "ReplicaSet" | "ReplicationController")
+    matches!(
+        kind,
+        "Deployment" | "StatefulSet" | "ReplicaSet" | "ReplicationController"
+    )
 }
 fn reiniciable(kind: &str) -> bool {
     matches!(kind, "Deployment" | "StatefulSet" | "DaemonSet" | "Pod")
@@ -108,7 +117,11 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
         return;
     };
     let Some(item) = pane.item.clone() else {
-        super::centrado(ui, "Elegí un recurso en la barra lateral", theme::TEXTO_TENUE);
+        super::centrado(
+            ui,
+            "Elegí un recurso en la barra lateral",
+            theme::TEXTO_TENUE,
+        );
         return;
     };
 
@@ -160,7 +173,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     // Ya se resolvió arriba, antes de prestar el store mutablemente.
     let permisos = permisos.as_ref();
     let col_estado = columns::indice_estado(&kind, mostrar_ns);
-    let Some(store) = pane.store.as_mut() else { return };
+    let Some(store) = pane.store.as_mut() else {
+        return;
+    };
     store.set_col_estado(col_estado);
     store.set_filtro(&busqueda);
     store.refrescar();
@@ -267,14 +282,40 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
             .show(ui, |ui| {
                 ui.set_min_width(ancho_pedido);
                 cuerpo(
-                    ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints,
-                    metricas, permisos, cursor, mover != 0, &mut clic_en, accion,
+                    ui,
+                    store,
+                    &cabeceras,
+                    &anchos,
+                    filas,
+                    &sel_key,
+                    &kind,
+                    id,
+                    endpoints,
+                    metricas,
+                    permisos,
+                    cursor,
+                    mover != 0,
+                    &mut clic_en,
+                    accion,
                 );
             });
     } else {
         cuerpo(
-            ui, store, &cabeceras, &anchos, filas, &sel_key, &kind, id, endpoints, metricas,
-            permisos, cursor, mover != 0, &mut clic_en, accion,
+            ui,
+            store,
+            &cabeceras,
+            &anchos,
+            filas,
+            &sel_key,
+            &kind,
+            id,
+            endpoints,
+            metricas,
+            permisos,
+            cursor,
+            mover != 0,
+            &mut clic_en,
+            accion,
         );
     }
 
@@ -312,7 +353,11 @@ fn cuerpo(
     // colaban en Nodes, y al achicar la ventana las columnas no se enteraban.
     // Con el ancho en cuartos, arrastrar una columna se mantiene mientras la
     // ventana no cambie de tamaño, pero un resize sí rearma el reparto.
-    let salt = (kind, cabeceras.len(), (anchos.iter().sum::<f32>() / 24.0) as i32);
+    let salt = (
+        kind,
+        cabeceras.len(),
+        (anchos.iter().sum::<f32>() / 24.0) as i32,
+    );
     let mut builder = TableBuilder::new(ui)
         .id_salt(salt)
         .striped(true)
@@ -332,7 +377,11 @@ fn cuerpo(
             for (i, c) in cabeceras.iter().enumerate() {
                 header.col(|ui| {
                     let flecha = if i == sort_col {
-                        if sort_desc { " ▼" } else { " ▲" }
+                        if sort_desc {
+                            " ▼"
+                        } else {
+                            " ▲"
+                        }
                     } else {
                         ""
                     };
@@ -340,7 +389,11 @@ fn cuerpo(
                         egui::Label::new(
                             egui::RichText::new(format!("{}{flecha}", c.title))
                                 .size(11.5)
-                                .color(if i == sort_col { theme::TEXTO } else { theme::TEXTO_TENUE }),
+                                .color(if i == sort_col {
+                                    theme::TEXTO
+                                } else {
+                                    theme::TEXTO_TENUE
+                                }),
                         )
                         .sense(egui::Sense::click()),
                     );
@@ -403,7 +456,14 @@ fn cuerpo(
                 let (ns, nombre) = partir_key(&key);
                 resp.context_menu(|ui| {
                     menu_acciones(
-                        ui, pane_id, kind, &key, ns.clone(), nombre.clone(), permisos, accion,
+                        ui,
+                        pane_id,
+                        kind,
+                        &key,
+                        ns.clone(),
+                        nombre.clone(),
+                        permisos,
+                        accion,
                     );
                 });
             });
@@ -430,7 +490,9 @@ fn selector_estado(ui: &mut egui::Ui, store: &mut crate::store::Store, id: u64) 
     }
     let actual = store.filtro_estado().clone();
     // El combo dice qué columna filtra: en Events es "tipo", no "estado".
-    let etiqueta = columns::titulo_estado(store.kind()).unwrap_or("Estado").to_lowercase();
+    let etiqueta = columns::titulo_estado(store.kind())
+        .unwrap_or("Estado")
+        .to_lowercase();
     let (texto, color) = match &actual {
         FiltroEstado::Todos => (format!("{etiqueta}: todos"), theme::TEXTO_TENUE),
         FiltroEstado::Problemas => (format!("{etiqueta}: con problemas"), theme::WARN),
@@ -474,10 +536,7 @@ fn selector_estado(ui: &mut egui::Ui, store: &mut crate::store::Store, id: u64) 
                     theme::BAD
                 };
                 if ui
-                    .selectable_label(
-                        sel,
-                        egui::RichText::new(format!("{e}  ({n})")).color(color),
-                    )
+                    .selectable_label(sel, egui::RichText::new(format!("{e}  ({n})")).color(color))
                     .clicked()
                 {
                     nuevo = Some(if sel {
@@ -501,7 +560,10 @@ fn asignable_de(o: &kube::api::DynamicObject) -> Option<crate::k8s::metricas::Us
     let a = o.data.get("status")?.get("allocatable")?;
     Some(Uso {
         cpu_m: a.get("cpu").and_then(|v| v.as_str()).and_then(parse_cpu)?,
-        mem_bytes: a.get("memory").and_then(|v| v.as_str()).and_then(parse_mem)?,
+        mem_bytes: a
+            .get("memory")
+            .and_then(|v| v.as_str())
+            .and_then(parse_mem)?,
     })
 }
 
@@ -529,7 +591,10 @@ fn celda_cpu(
         Some(a) => {
             let p = u.cpu_m as f64 * 100.0 / a.cpu_m as f64;
             ui.colored_label(color_por_porcentaje(p), format!("{p:.0}%"))
-                .on_hover_text(format!("{texto} de {}", crate::k8s::metricas::fmt_cpu(a.cpu_m)));
+                .on_hover_text(format!(
+                    "{texto} de {}",
+                    crate::k8s::metricas::fmt_cpu(a.cpu_m)
+                ));
         }
         None => {
             ui.label(texto);
@@ -551,7 +616,10 @@ fn celda_mem(
         Some(a) => {
             let p = u.mem_bytes as f64 * 100.0 / a.mem_bytes as f64;
             ui.colored_label(color_por_porcentaje(p), format!("{p:.0}%"))
-                .on_hover_text(format!("{texto} de {}", crate::k8s::metricas::fmt_mem(a.mem_bytes)));
+                .on_hover_text(format!(
+                    "{texto} de {}",
+                    crate::k8s::metricas::fmt_mem(a.mem_bytes)
+                ));
         }
         None => {
             ui.label(texto);
@@ -568,7 +636,11 @@ fn celda_endpoints(ui: &mut egui::Ui, c: Option<&crate::k8s::endpoints::Conteo>)
         return;
     };
     let (texto, color, ayuda) = if c.total == 0 {
-        ("0".to_string(), theme::BAD, "ningún backend: el Service no resuelve a nada")
+        (
+            "0".to_string(),
+            theme::BAD,
+            "ningún backend: el Service no resuelve a nada",
+        )
     } else if c.listos == 0 {
         (
             format!("0 / {}", c.total),

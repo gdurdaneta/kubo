@@ -21,7 +21,7 @@ pub struct CategorySpec {
 pub const CATALOG: &[CategorySpec] = &[
     CategorySpec {
         name: "Cluster",
-        icono: "◈",
+        icono: "cluster",
         kinds: &[
             ("", "Node"),
             ("", "Namespace"),
@@ -31,7 +31,7 @@ pub const CATALOG: &[CategorySpec] = &[
     },
     CategorySpec {
         name: "Workloads",
-        icono: "▦",
+        icono: "workloads",
         kinds: &[
             ("", "Pod"),
             ("apps", "Deployment"),
@@ -45,7 +45,7 @@ pub const CATALOG: &[CategorySpec] = &[
     },
     CategorySpec {
         name: "Config",
-        icono: "◎",
+        icono: "config",
         kinds: &[
             ("", "ConfigMap"),
             ("", "Secret"),
@@ -58,7 +58,7 @@ pub const CATALOG: &[CategorySpec] = &[
     },
     CategorySpec {
         name: "Network",
-        icono: "⇅",
+        icono: "network",
         kinds: &[
             ("", "Service"),
             ("", "Endpoints"),
@@ -70,7 +70,7 @@ pub const CATALOG: &[CategorySpec] = &[
     },
     CategorySpec {
         name: "Storage",
-        icono: "▤",
+        icono: "storage",
         kinds: &[
             ("", "PersistentVolumeClaim"),
             ("", "PersistentVolume"),
@@ -79,7 +79,7 @@ pub const CATALOG: &[CategorySpec] = &[
     },
     CategorySpec {
         name: "Access Control",
-        icono: "◐",
+        icono: "access",
         kinds: &[
             ("", "ServiceAccount"),
             ("rbac.authorization.k8s.io", "Role"),
@@ -106,7 +106,7 @@ struct ExtSpec {
 const EXTENSIONES: &[ExtSpec] = &[
     ExtSpec {
         nombre: "Gateway API",
-        icono: "⇉",
+        icono: "gateway",
         grupos: &["gateway.networking.k8s.io"],
         orden: &[
             "GatewayClass",
@@ -123,7 +123,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "Argo CD",
-        icono: "◆",
+        icono: "extension",
         grupos: &["argoproj.io"],
         orden: &[
             "Application",
@@ -140,7 +140,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "Istio",
-        icono: "◆",
+        icono: "extension",
         grupos: &[
             "networking.istio.io",
             "security.istio.io",
@@ -168,7 +168,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "cert-manager",
-        icono: "◆",
+        icono: "extension",
         grupos: &["cert-manager.io", "acme.cert-manager.io"],
         orden: &[
             "Certificate",
@@ -182,7 +182,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "Prometheus Operator",
-        icono: "◆",
+        icono: "extension",
         grupos: &["monitoring.coreos.com"],
         orden: &[
             "Prometheus",
@@ -197,7 +197,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "Flux",
-        icono: "◆",
+        icono: "extension",
         grupos: &["*.toolkit.fluxcd.io"],
         orden: &[
             "GitRepository",
@@ -215,7 +215,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "KEDA",
-        icono: "◆",
+        icono: "extension",
         grupos: &["keda.sh"],
         orden: &[
             "ScaledObject",
@@ -227,7 +227,7 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "MetalLB",
-        icono: "◆",
+        icono: "extension",
         grupos: &["metallb.io"],
         orden: &[
             "IPAddressPool",
@@ -241,14 +241,22 @@ const EXTENSIONES: &[ExtSpec] = &[
     },
     ExtSpec {
         nombre: "RabbitMQ Operator",
-        icono: "◆",
+        icono: "extension",
         grupos: &["rabbitmq.com"],
-        orden: &["RabbitmqCluster", "Queue", "Exchange", "Binding", "Policy", "User", "Vhost"],
+        orden: &[
+            "RabbitmqCluster",
+            "Queue",
+            "Exchange",
+            "Binding",
+            "Policy",
+            "User",
+            "Vhost",
+        ],
         dentro_de: None,
     },
     ExtSpec {
         nombre: "External Secrets",
-        icono: "◆",
+        icono: "extension",
         grupos: &["external-secrets.io", "generators.external-secrets.io"],
         orden: &[
             "ExternalSecret",
@@ -527,7 +535,10 @@ mod tests {
         assert_eq!(plural_legible("NetworkPolicy"), "Network Policies");
         assert_eq!(plural_legible("Ingress"), "Ingresses");
         assert_eq!(plural_legible("Endpoints"), "Endpoints");
-        assert_eq!(plural_legible("PodDisruptionBudget"), "Pod Disruption Budgets");
+        assert_eq!(
+            plural_legible("PodDisruptionBudget"),
+            "Pod Disruption Budgets"
+        );
         assert_eq!(
             plural_legible("CustomResourceDefinition"),
             "Custom Resource Definitions"
@@ -589,8 +600,17 @@ mod tests {
     fn detecta_grupos_exactos_y_por_sufijo() {
         assert!(grupo_coincide("argoproj.io", "argoproj.io"));
         assert!(!grupo_coincide("argoproj.io", "cert-manager.io"));
-        assert!(grupo_coincide("source.toolkit.fluxcd.io", "*.toolkit.fluxcd.io"));
-        assert!(grupo_coincide("helm.toolkit.fluxcd.io", "*.toolkit.fluxcd.io"));
-        assert!(!grupo_coincide("toolkit.fluxcd.io.evil.com", "*.toolkit.fluxcd.io"));
+        assert!(grupo_coincide(
+            "source.toolkit.fluxcd.io",
+            "*.toolkit.fluxcd.io"
+        ));
+        assert!(grupo_coincide(
+            "helm.toolkit.fluxcd.io",
+            "*.toolkit.fluxcd.io"
+        ));
+        assert!(!grupo_coincide(
+            "toolkit.fluxcd.io.evil.com",
+            "*.toolkit.fluxcd.io"
+        ));
     }
 }

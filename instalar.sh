@@ -16,10 +16,12 @@ if [ "${1:-}" = "--quitar" ]; then
   exit 0
 fi
 
-# Por defecto el recién compilado. Antes se prefería el de dist/, que lo genera
-# dist.sh para glibc viejo y no se regenera en cada build: instalaba una versión
-# de días atrás sin decir nada.
+# En el repo se usa el recién compilado; en el paquete de una release, el
+# binario viene junto al instalador.
 ORIGEN="$RAIZ/target/release/kubo"
+if [ ! -x "$ORIGEN" ] && [ -x "$RAIZ/kubo" ]; then
+  ORIGEN="$RAIZ/kubo"
+fi
 if [ "${1:-}" = "--portable" ]; then
   ORIGEN="$RAIZ/dist/kubo"
   [ -x "$ORIGEN" ] || { echo "no hay dist/kubo; corré ./dist.sh primero" >&2; exit 1; }
@@ -38,13 +40,13 @@ done
 
 # StartupWMClass tiene que coincidir con el app_id que setea la app, si no el
 # launcher no asocia la ventana abierta con su entrada.
-cat > "$APPS/kubo.desktop" <<'DESKTOP'
+cat > "$APPS/kubo.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=kubo
 GenericName=Cliente de Kubernetes
 Comment=Explorar clusters de Kubernetes: recursos en vivo, logs, shell y port-forward
-Exec=kubo
+Exec="$BIN/kubo"
 Icon=kubo
 Terminal=false
 Categories=Development;

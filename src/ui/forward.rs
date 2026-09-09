@@ -15,7 +15,9 @@ pub fn dialogo(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
 
     let modal = egui::Modal::new(egui::Id::new("dialogo_pf")).show(ctx, |ui| {
         ui.set_width(460.0);
-        let Some(d) = app.dialogo_pf.as_mut() else { return };
+        let Some(d) = app.dialogo_pf.as_mut() else {
+            return;
+        };
 
         ui.heading("Port forward");
         ui.colored_label(

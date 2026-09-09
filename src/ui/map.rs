@@ -160,11 +160,15 @@ pub fn dibujar(ui: &mut egui::Ui, data: &MapaData) {
             p.circle_filled(centro, 5.0, c);
             // Tooltip por pod: una zona interactuable invisible sobre el punto.
             let zona = Rect::from_center_size(centro, egui::vec2(14.0, 14.0));
-            ui.interact(zona, egui::Id::new(("pod_dot", &w.name, i)), egui::Sense::hover())
-                .on_hover_ui(|ui| {
-                    ui.label(&pod.name);
-                    ui.colored_label(theme::TEXTO_TENUE, &pod.estado);
-                });
+            ui.interact(
+                zona,
+                egui::Id::new(("pod_dot", &w.name, i)),
+                egui::Sense::hover(),
+            )
+            .on_hover_ui(|ui| {
+                ui.label(&pod.name);
+                ui.colored_label(theme::TEXTO_TENUE, &pod.estado);
+            });
         }
 
         curva(&p, svc_rect.right_center(), r.left_center(), color);
@@ -396,7 +400,13 @@ fn flecha(ui: &mut egui::Ui) {
 }
 
 /// Cajitas en grilla: dos por fila si el panel da el ancho, una si no.
-fn grilla(ui: &mut egui::Ui, cajas: &[Caja], pane_id: u64, ns: &Option<String>, accion: &mut Accion) {
+fn grilla(
+    ui: &mut egui::Ui,
+    cajas: &[Caja],
+    pane_id: u64,
+    ns: &Option<String>,
+    accion: &mut Accion,
+) {
     let gap = 6.0;
     let disponible = ui.available_width();
     let por_fila = if disponible >= 420.0 { 2 } else { 1 };
@@ -434,7 +444,11 @@ fn cajita(ui: &mut egui::Ui, caja: &Caja, ancho: f32) -> bool {
     p.rect_filled(
         rect,
         CornerRadius::same(5),
-        if hover { theme::BORDE } else { theme::PANEL_ALT },
+        if hover {
+            theme::BORDE
+        } else {
+            theme::PANEL_ALT
+        },
     );
     p.rect_stroke(
         rect,
@@ -479,7 +493,11 @@ fn cajita(ui: &mut egui::Ui, caja: &Caja, ancho: f32) -> bool {
         egui::Align2::LEFT_TOP,
         recortar(&caja.nombre, max_nombre.max(8)),
         FontId::proportional(11.5),
-        if caja.existe { theme::TEXTO } else { theme::BAD },
+        if caja.existe {
+            theme::TEXTO
+        } else {
+            theme::BAD
+        },
     );
     p.text(
         rect.left_bottom() + egui::vec2(10.0, -4.0),

@@ -1,12 +1,14 @@
-//! Modal de confirmación para acciones destructivas (borrar, reiniciar,
-//! escalar). Nada muta el cluster sin pasar por acá.
+//! Modal de confirmación para mutaciones (borrar, reiniciar, escalar y aplicar
+//! YAML). Nada muta el cluster sin pasar por acá.
 
 use super::Accion;
 use crate::app::{App, Verbo};
 use crate::theme;
 
 pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
-    let Some(confirm) = app.confirm.as_mut() else { return };
+    let Some(confirm) = app.confirm.as_mut() else {
+        return;
+    };
 
     // Escalar(-1) es el sentinel "precargar con las réplicas actuales".
     if let Verbo::Escalar(n) = confirm.verbo {
@@ -54,7 +56,11 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
         if let Some(ctx_nombre) = contexto.as_deref() {
             let prod = parece_produccion(ctx_nombre);
             egui::Frame::new()
-                .fill(if prod { theme::BAD_TENUE } else { theme::PANEL_ALT })
+                .fill(if prod {
+                    theme::BAD_TENUE
+                } else {
+                    theme::PANEL_ALT
+                })
                 .stroke(egui::Stroke::new(
                     1.0,
                     if prod { theme::BAD } else { theme::BORDE },
@@ -71,9 +77,11 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(ctx_nombre)
-                                    .strong()
-                                    .color(if prod { theme::BAD } else { theme::TEXTO }),
+                                egui::RichText::new(ctx_nombre).strong().color(if prod {
+                                    theme::BAD
+                                } else {
+                                    theme::TEXTO
+                                }),
                             )
                             .truncate(),
                         )
@@ -88,7 +96,9 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                 ui.label(egui::RichText::new("Borrar recurso").strong().size(15.0));
                 ui.add_space(6.0);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                ui.label(format!("Se va a borrar {destino}. Esto no se puede deshacer."));
+                ui.label(format!(
+                    "Se va a borrar {destino}. Esto no se puede deshacer."
+                ));
             }
             Verbo::Reiniciar => {
                 ui.label(egui::RichText::new("Reiniciar").strong().size(15.0));
@@ -116,6 +126,20 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                     }
                 });
             }
+            Verbo::AplicarYaml(_) => {
+                ui.label(
+                    egui::RichText::new("Aplicar manifiesto")
+                        .strong()
+                        .size(15.0),
+                );
+                ui.add_space(6.0);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                ui.label(format!("Se va a reemplazar {destino} con el YAML editado."));
+                ui.colored_label(
+                    theme::WARN,
+                    "Los cambios se enviarán directamente al API server.",
+                );
+            }
         }
 
         ui.add_space(12.0);
@@ -124,6 +148,7 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                 Verbo::Borrar => ("Borrar", theme::BAD),
                 Verbo::Reiniciar => ("Reiniciar", theme::WARN),
                 Verbo::Escalar(_) => ("Escalar", theme::ACENTO),
+                Verbo::AplicarYaml(_) => ("Aplicar", theme::WARN),
             };
             if ui
                 .button(egui::RichText::new(texto).color(color).strong())
@@ -166,7 +191,9 @@ mod tests {
         assert!(parece_produccion("justo-prod-mexico"));
         assert!(parece_produccion("arn:aws:eks:us-east-1:1234:cluster/prod"));
         assert!(parece_produccion("PRD-cluster"));
-        assert!(!parece_produccion("arn:aws:eks:us-east-2:1234:cluster/staging"));
+        assert!(!parece_produccion(
+            "arn:aws:eks:us-east-2:1234:cluster/staging"
+        ));
         assert!(!parece_produccion("inxpirius@217.76.158.104"));
         assert!(!parece_produccion("preprod"));
         assert!(!parece_produccion("non-prod-eu"));

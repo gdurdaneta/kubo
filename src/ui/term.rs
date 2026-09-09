@@ -14,7 +14,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
     };
-    let Some(Bottom::Term(v)) = pane.bottom.as_mut() else { return };
+    let Some(Bottom::Term(v)) = pane.bottom.as_mut() else {
+        return;
+    };
 
     ui.horizontal(|ui| {
         ui.colored_label(theme::ACENTO, "❯");
@@ -35,9 +37,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     ui.add_space(2.0);
 
     let font = FontId::monospace(FONT);
-    let (ancho_char, alto_fila) = ui.fonts_mut(|f| {
-        (f.glyph_width(&font, 'M'), f.row_height(&font))
-    });
+    let (ancho_char, alto_fila) =
+        ui.fonts_mut(|f| (f.glyph_width(&font, 'M'), f.row_height(&font)));
 
     let disponible = ui.available_size();
     let cols = ((disponible.x - 4.0) / ancho_char).floor().max(20.0) as u16;
@@ -78,7 +79,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     for fila in 0..rows.min(screen.size().0) {
         let mut job = LayoutJob::default();
         for col in 0..cols.min(screen.size().1) {
-            let Some(cell) = screen.cell(fila, col) else { continue };
+            let Some(cell) = screen.cell(fila, col) else {
+                continue;
+            };
             let mut fg = color_vt(cell.fgcolor(), theme::TEXTO);
             let mut bg = color_vt(cell.bgcolor(), Color32::TRANSPARENT);
             if cell.inverse() {
@@ -195,11 +198,32 @@ fn capturar_teclado(ui: &mut egui::Ui, v: &mut crate::app::VistaTerm) {
 fn letra(key: egui::Key) -> Option<u8> {
     use egui::Key::*;
     Some(match key {
-        A => b'a', B => b'b', C => b'c', D => b'd', E => b'e', F => b'f',
-        G => b'g', H => b'h', I => b'i', J => b'j', K => b'k', L => b'l',
-        M => b'm', N => b'n', O => b'o', P => b'p', Q => b'q', R => b'r',
-        S => b's', T => b't', U => b'u', V => b'v', W => b'w', X => b'x',
-        Y => b'y', Z => b'z',
+        A => b'a',
+        B => b'b',
+        C => b'c',
+        D => b'd',
+        E => b'e',
+        F => b'f',
+        G => b'g',
+        H => b'h',
+        I => b'i',
+        J => b'j',
+        K => b'k',
+        L => b'l',
+        M => b'm',
+        N => b'n',
+        O => b'o',
+        P => b'p',
+        Q => b'q',
+        R => b'r',
+        S => b's',
+        T => b't',
+        U => b'u',
+        V => b'v',
+        W => b'w',
+        X => b'x',
+        Y => b'y',
+        Z => b'z',
         _ => return None,
     })
 }
@@ -215,10 +239,22 @@ fn color_vt(c: vt100::Color, defecto: Color32) -> Color32 {
 
 fn idx_color(i: u8) -> Color32 {
     const BASE: [(u8, u8, u8); 16] = [
-        (0x1c, 0x1f, 0x26), (0xe5, 0x63, 0x63), (0x4c, 0xc3, 0x8a), (0xe0, 0xa6, 0x3a),
-        (0x3d, 0x90, 0xf0), (0xb0, 0x7f, 0xd8), (0x3e, 0xc5, 0xc7), (0xdc, 0xe1, 0xe8),
-        (0x55, 0x5b, 0x66), (0xf0, 0x87, 0x87), (0x7d, 0xd8, 0xa8), (0xf0, 0xc6, 0x74),
-        (0x74, 0xb2, 0xf5), (0xd0, 0xa5, 0xe8), (0x7f, 0xdb, 0xdd), (0xff, 0xff, 0xff),
+        (0x1c, 0x1f, 0x26),
+        (0xe5, 0x63, 0x63),
+        (0x4c, 0xc3, 0x8a),
+        (0xe0, 0xa6, 0x3a),
+        (0x3d, 0x90, 0xf0),
+        (0xb0, 0x7f, 0xd8),
+        (0x3e, 0xc5, 0xc7),
+        (0xdc, 0xe1, 0xe8),
+        (0x55, 0x5b, 0x66),
+        (0xf0, 0x87, 0x87),
+        (0x7d, 0xd8, 0xa8),
+        (0xf0, 0xc6, 0x74),
+        (0x74, 0xb2, 0xf5),
+        (0xd0, 0xa5, 0xe8),
+        (0x7f, 0xdb, 0xdd),
+        (0xff, 0xff, 0xff),
     ];
     match i {
         0..=15 => {

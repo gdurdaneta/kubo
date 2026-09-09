@@ -10,7 +10,14 @@ use crate::theme;
 fn tiene_mapa(kind: &str) -> bool {
     matches!(
         kind,
-        "Service" | "Deployment" | "StatefulSet" | "DaemonSet" | "ReplicaSet" | "CronJob" | "Job" | "Pod"
+        "Service"
+            | "Deployment"
+            | "StatefulSet"
+            | "DaemonSet"
+            | "ReplicaSet"
+            | "CronJob"
+            | "Job"
+            | "Pod"
     )
 }
 
@@ -24,7 +31,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
     };
-    let Some(det) = pane.detalle.as_mut() else { return };
+    let Some(det) = pane.detalle.as_mut() else {
+        return;
+    };
 
     // ---- cabecera con acciones ------------------------------------------
     // Los botones se colocan primero, de derecha a izquierda; el título usa lo
@@ -75,8 +84,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.add(
-                    egui::Label::new(egui::RichText::new(&det.name).strong().size(15.0))
-                        .truncate(),
+                    egui::Label::new(egui::RichText::new(&det.name).strong().size(15.0)).truncate(),
                 )
                 .on_hover_text(&det.name);
                 let sub = match &det.ns {
@@ -84,8 +92,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     None => det.kind.clone(),
                 };
                 ui.add(
-                    egui::Label::new(egui::RichText::new(sub).color(theme::TEXTO_TENUE))
-                        .truncate(),
+                    egui::Label::new(egui::RichText::new(sub).color(theme::TEXTO_TENUE)).truncate(),
                 );
             });
         });
@@ -104,7 +111,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             }
         }
         if tiene_mapa(&det.kind)
-            && ui.selectable_label(det.tab == TabDetalle::Mapa, "Mapa").clicked()
+            && ui
+                .selectable_label(det.tab == TabDetalle::Mapa, "Mapa")
+                .clicked()
         {
             det.tab = TabDetalle::Mapa;
             if det.mapa.is_none() {
@@ -185,7 +194,11 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     } else {
                         "esperando la copia del API server"
                     });
-                    if ui.button("Recargar").on_hover_text("Releer del API server").clicked() {
+                    if ui
+                        .button("Recargar")
+                        .on_hover_text("Releer del API server")
+                        .clicked()
+                    {
                         recargar = true;
                     }
                     if ui.button("Copiar").clicked() {
@@ -268,33 +281,31 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                 *accion = Accion::AbrirDetalleTab(id, key.clone(), TabDetalle::Yaml);
             }
         }
-        TabDetalle::Mapa => {
-            match det.mapa.as_deref() {
-                Some(data) => {
-                    let data = data.clone();
-                    egui::ScrollArea::both()
-                        .id_salt(("mapa_scroll", id))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            if ui.button("↻ actualizar").clicked() {
-                                pedir_mapa = true;
+        TabDetalle::Mapa => match det.mapa.as_deref() {
+            Some(data) => {
+                let data = data.clone();
+                egui::ScrollArea::both()
+                    .id_salt(("mapa_scroll", id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if ui.button("↻ actualizar").clicked() {
+                            pedir_mapa = true;
+                        }
+                        match &data {
+                            crate::k8s::mapa::Mapa::Service(d) => crate::ui::map::dibujar(ui, d),
+                            crate::k8s::mapa::Mapa::Workload(d) => {
+                                crate::ui::map::dibujar_workload(ui, d, id, &ns_detalle, accion)
                             }
-                            match &data {
-                                crate::k8s::mapa::Mapa::Service(d) => crate::ui::map::dibujar(ui, d),
-                                crate::k8s::mapa::Mapa::Workload(d) => {
-                                    crate::ui::map::dibujar_workload(ui, d, id, &ns_detalle, accion)
-                                }
-                            }
-                        });
-                }
-                None => {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.colored_label(theme::TEXTO_TENUE, "armando el mapa…");
+                        }
                     });
-                }
             }
-        }
+            None => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.colored_label(theme::TEXTO_TENUE, "armando el mapa…");
+                });
+            }
+        },
         TabDetalle::Resumen | TabDetalle::Eventos => {
             let obj_existe = pane.store.as_ref().and_then(|s| s.objeto(&key)).is_some();
             egui::ScrollArea::vertical()
@@ -316,7 +327,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                                 );
                             }
                         } else {
-                            ui.colored_label(theme::TEXTO_TENUE, "el objeto ya no está en la vista");
+                            ui.colored_label(
+                                theme::TEXTO_TENUE,
+                                "el objeto ya no está en la vista",
+                            );
                         }
                     }
                     _ => {
@@ -331,7 +345,11 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                             );
                         }
                         for e in &eventos {
-                            let color = if e.type_ == "Warning" { theme::BAD } else { theme::TEXTO_TENUE };
+                            let color = if e.type_ == "Warning" {
+                                theme::BAD
+                            } else {
+                                theme::TEXTO_TENUE
+                            };
                             egui::Frame::new()
                                 .fill(theme::PANEL_ALT)
                                 .corner_radius(4)
@@ -340,7 +358,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                                     ui.horizontal(|ui| {
                                         ui.colored_label(color, &e.reason);
                                         if e.count > 1 {
-                                            ui.colored_label(theme::TEXTO_TENUE, format!("×{}", e.count));
+                                            ui.colored_label(
+                                                theme::TEXTO_TENUE,
+                                                format!("×{}", e.count),
+                                            );
                                         }
                                         if let Some(t) = e.last {
                                             ui.with_layout(
@@ -391,7 +412,11 @@ fn resumen(
             campo(ui, "UID", &uid);
         }
         if let Some(dueño) = o.metadata.owner_references.as_ref().and_then(|r| r.first()) {
-            campo(ui, "Controlado por", &format!("{}/{}", dueño.kind, dueño.name));
+            campo(
+                ui,
+                "Controlado por",
+                &format!("{}/{}", dueño.kind, dueño.name),
+            );
         }
     });
 
@@ -478,7 +503,10 @@ fn uso_recursos(
         let Some(ultimo) = historial.last() else {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.colored_label(theme::TEXTO_TENUE, "esperando la primera muestra de metrics-server…");
+                ui.colored_label(
+                    theme::TEXTO_TENUE,
+                    "esperando la primera muestra de metrics-server…",
+                );
             });
             return;
         };
@@ -488,8 +516,12 @@ fn uso_recursos(
         let (tope_cpu, tope_mem) = if kind == "Node" {
             let a = o.data.get("status").and_then(|s| s.get("allocatable"));
             (
-                a.and_then(|a| a.get("cpu")).and_then(|v| v.as_str()).and_then(parse_cpu),
-                a.and_then(|a| a.get("memory")).and_then(|v| v.as_str()).and_then(parse_mem),
+                a.and_then(|a| a.get("cpu"))
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_cpu),
+                a.and_then(|a| a.get("memory"))
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_mem),
             )
         } else {
             limites_del_pod(o)
@@ -513,7 +545,10 @@ fn uso_recursos(
                 ui,
                 mitad,
                 "Memoria",
-                &historial.iter().map(|u| u.mem_bytes as f64).collect::<Vec<_>>(),
+                &historial
+                    .iter()
+                    .map(|u| u.mem_bytes as f64)
+                    .collect::<Vec<_>>(),
                 tope_mem.map(|t| t as f64),
                 &fmt_mem(ultimo.mem_bytes),
                 tope_mem.map(fmt_mem),
@@ -546,11 +581,19 @@ fn limites_del_pod(o: &kube::api::DynamicObject) -> (Option<u64>, Option<u64>) {
     let mut mem = Some(0u64);
     for c in cs {
         let l = c.get("resources").and_then(|r| r.get("limits"));
-        match l.and_then(|l| l.get("cpu")).and_then(|v| v.as_str()).and_then(parse_cpu) {
+        match l
+            .and_then(|l| l.get("cpu"))
+            .and_then(|v| v.as_str())
+            .and_then(parse_cpu)
+        {
             Some(v) => cpu = cpu.map(|t| t + v),
             None => cpu = None,
         }
-        match l.and_then(|l| l.get("memory")).and_then(|v| v.as_str()).and_then(parse_mem) {
+        match l
+            .and_then(|l| l.get("memory"))
+            .and_then(|v| v.as_str())
+            .and_then(parse_mem)
+        {
             Some(v) => mem = mem.map(|t| t + v),
             None => mem = None,
         }
@@ -574,8 +617,9 @@ fn sparkline(
         ui.set_width(ancho);
         ui.horizontal(|ui| {
             ui.colored_label(theme::TEXTO_TENUE, titulo);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                match &tope_texto {
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| match &tope_texto {
                     Some(t) => {
                         ui.colored_label(theme::TEXTO_TENUE, format!("/ {t}"));
                         ui.label(egui::RichText::new(actual).strong());
@@ -583,8 +627,8 @@ fn sparkline(
                     None => {
                         ui.label(egui::RichText::new(actual).strong());
                     }
-                }
-            });
+                },
+            );
         });
 
         let alto = 42.0;
@@ -624,7 +668,10 @@ fn sparkline(
                 color.gamma_multiply(0.15),
                 egui::Stroke::NONE,
             ));
-            p.add(egui::Shape::line(puntos.clone(), egui::Stroke::new(1.5, color)));
+            p.add(egui::Shape::line(
+                puntos.clone(),
+                egui::Stroke::new(1.5, color),
+            ));
         }
         if let Some(ultimo) = puntos.last() {
             p.circle_filled(*ultimo, 2.5, color);
@@ -737,7 +784,10 @@ fn resumen_pod(ui: &mut egui::Ui, o: &kube::api::DynamicObject) {
         .map(|a| a.iter().collect())
         .unwrap_or_default();
 
-    if let Some(cs) = spec.and_then(|s| s.get("containers")).and_then(|v| v.as_array()) {
+    if let Some(cs) = spec
+        .and_then(|s| s.get("containers"))
+        .and_then(|v| v.as_array())
+    {
         seccion(ui, "Contenedores", |ui| {
             for c in cs {
                 let nombre = str_de(c, "name");
@@ -960,11 +1010,7 @@ fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
     );
 }
 
-fn chips_fila(
-    ui: &mut egui::Ui,
-    ancho: f32,
-    mapa: &std::collections::BTreeMap<String, String>,
-) {
+fn chips_fila(ui: &mut egui::Ui, ancho: f32, mapa: &std::collections::BTreeMap<String, String>) {
     ui.horizontal_wrapped(|ui| {
         for (k, v) in mapa {
             egui::Frame::new()
@@ -1030,63 +1076,74 @@ fn datos_clave_valor(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject
     }
     claves.sort_by(|a, b| a.0.cmp(&b.0));
 
-    seccion(ui, if es_secret { "Datos (ocultos)" } else { "Datos" }, |ui| {
-        for (clave, valor, binario) in &claves {
-            let id = ui.make_persistent_id(("secreto_visible", &clave));
-            let mut visible = ui
-                .ctx()
-                .data(|d| d.get_temp::<bool>(id))
-                .unwrap_or(!es_secret);
+    seccion(
+        ui,
+        if es_secret {
+            "Datos (ocultos)"
+        } else {
+            "Datos"
+        },
+        |ui| {
+            for (clave, valor, binario) in &claves {
+                let id = ui.make_persistent_id(("secreto_visible", &clave));
+                let mut visible = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<bool>(id))
+                    .unwrap_or(!es_secret);
 
-            egui::Frame::new()
-                .fill(theme::PANEL_ALT)
-                .corner_radius(4)
-                .inner_margin(6)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(clave).size(12.0).strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .small_button("copiar")
-                                .on_hover_text(if es_secret {
-                                    "copia el valor decodificado"
-                                } else {
-                                    "copia el valor"
-                                })
-                                .clicked()
-                            {
-                                ui.ctx().copy_text(valor.clone());
-                            }
-                            if es_secret && !binario {
-                                let txt = if visible { "ocultar" } else { "revelar" };
-                                if ui.small_button(txt).clicked() {
-                                    visible = !visible;
-                                    ui.ctx().data_mut(|d| d.insert_temp(id, visible));
-                                }
-                            }
+                egui::Frame::new()
+                    .fill(theme::PANEL_ALT)
+                    .corner_radius(4)
+                    .inner_margin(6)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(clave).size(12.0).strong());
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .small_button("copiar")
+                                        .on_hover_text(if es_secret {
+                                            "copia el valor decodificado"
+                                        } else {
+                                            "copia el valor"
+                                        })
+                                        .clicked()
+                                    {
+                                        ui.ctx().copy_text(valor.clone());
+                                    }
+                                    if es_secret && !binario {
+                                        let txt = if visible { "ocultar" } else { "revelar" };
+                                        if ui.small_button(txt).clicked() {
+                                            visible = !visible;
+                                            ui.ctx().data_mut(|d| d.insert_temp(id, visible));
+                                        }
+                                    }
+                                },
+                            );
                         });
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                        if visible {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(recortar_valor(valor))
+                                        .monospace()
+                                        .size(11.0),
+                                )
+                                .selectable(true),
+                            );
+                        } else {
+                            ui.colored_label(
+                                theme::TEXTO_TENUE,
+                                egui::RichText::new("••••••••••••").monospace(),
+                            );
+                        }
                     });
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                    if visible {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(recortar_valor(valor))
-                                    .monospace()
-                                    .size(11.0),
-                            )
-                            .selectable(true),
-                        );
-                    } else {
-                        ui.colored_label(
-                            theme::TEXTO_TENUE,
-                            egui::RichText::new("••••••••••••").monospace(),
-                        );
-                    }
-                });
-            ui.add_space(3.0);
-        }
-    });
+                ui.add_space(3.0);
+            }
+        },
+    );
 }
 
 /// Un valor gigante (un cert, un dump) no aporta nada en el panel.

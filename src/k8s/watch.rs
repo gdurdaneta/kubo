@@ -59,10 +59,7 @@ pub async fn run(
                 if lote.len() < TAM_LOTE {
                     continue;
                 }
-                WatchMsg::InitBatch(std::mem::replace(
-                    &mut lote,
-                    Vec::with_capacity(TAM_LOTE),
-                ))
+                WatchMsg::InitBatch(std::mem::replace(&mut lote, Vec::with_capacity(TAM_LOTE)))
             }
             Ok(Event::InitDone) => {
                 backoff_notified = false;
@@ -92,4 +89,11 @@ pub async fn run(
         };
         bridge.send(K8sEvent::Watch { token, msg });
     }
+    tracing::warn!(kind = %ar.kind, ?target, token, "watch: stream terminado");
+    bridge.send(K8sEvent::Watch {
+        token,
+        msg: WatchMsg::Error(
+            "el seguimiento terminó; refrescá la vista para reconectar".to_string(),
+        ),
+    });
 }

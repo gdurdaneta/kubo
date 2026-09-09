@@ -42,12 +42,7 @@ pub fn clave(ar: &ApiResource, ns: Option<&str>) -> String {
     format!("{}/{}", ns.unwrap_or(""), ar.plural)
 }
 
-pub async fn consultar(
-    client: Client,
-    ar: ApiResource,
-    ns: Option<String>,
-    bridge: UiBridge,
-) {
+pub async fn consultar(client: Client, ar: ApiResource, ns: Option<String>, bridge: UiBridge) {
     let api: Api<SelfSubjectAccessReview> = Api::all(client);
     let mut por_verbo = HashMap::new();
 

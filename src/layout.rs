@@ -15,6 +15,9 @@ pub struct PaneGuardado {
     pub ns: Option<String>,
     /// Clave `grupo/version/Kind` del recurso seleccionado.
     pub recurso: Option<String>,
+    /// Recursos fijados en el sidebar, identificados por su clave estable.
+    #[serde(default)]
+    pub favoritos: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,4 +47,19 @@ pub fn guardar(e: &Estado) {
         return;
     };
     let _ = crate::rutas::escribir_privado(&p, &bytes);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Estado;
+
+    #[test]
+    fn sesiones_viejas_cargan_sin_favoritos() {
+        let estado: Estado = serde_json::from_str(
+            r#"{"panes":[{"contexto":"dev","ns":"default","recurso":"v1/Pod"}]}"#,
+        )
+        .unwrap();
+
+        assert!(estado.panes[0].favoritos.is_empty());
+    }
 }

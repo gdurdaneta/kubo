@@ -8,7 +8,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let Some(pane) = app.panes.iter_mut().find(|p| p.id == id) else {
         return;
     };
-    let Some(Bottom::Logs(v)) = pane.bottom.as_mut() else { return };
+    let Some(Bottom::Logs(v)) = pane.bottom.as_mut() else {
+        return;
+    };
     let mut reiniciar = false;
 
     ui.horizontal(|ui| {
