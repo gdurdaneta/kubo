@@ -987,6 +987,59 @@ fn barra_lote(
         });
 }
 
+/// Casilla compacta y plana: la de egui es grande y con borde grueso, y en
+/// una tabla densa se comía la fila. `parcial` dibuja un guion (cabecera con
+/// algunas filas marcadas). Devuelve si cambió y la respuesta.
+fn casilla(ui: &mut egui::Ui, marcada: &mut bool, parcial: bool) -> (bool, egui::Response) {
+    let lado = 13.0;
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(lado + 4.0, ALTO_FILA - 4.0),
+        egui::Sense::click(),
+    );
+    let caja = egui::Rect::from_center_size(rect.center(), egui::vec2(lado, lado));
+    let p = ui.painter();
+    let radio = 3.0;
+    if *marcada || parcial {
+        p.rect_filled(caja, radio, theme::ACENTO);
+        let trazo = egui::Stroke::new(1.8, theme::FONDO);
+        if *marcada {
+            let a = caja.left_center() + egui::vec2(3.0, 0.5);
+            let b = caja.center() + egui::vec2(-1.0, 3.2);
+            let c = caja.right_top() + egui::vec2(-3.0, 3.5);
+            p.line_segment([a, b], trazo);
+            p.line_segment([b, c], trazo);
+        } else {
+            p.line_segment(
+                [
+                    caja.left_center() + egui::vec2(3.0, 0.0),
+                    caja.right_center() + egui::vec2(-3.0, 0.0),
+                ],
+                trazo,
+            );
+        }
+    } else {
+        if resp.hovered() {
+            p.rect_filled(caja, radio, theme::HOVER);
+        }
+        let borde = if resp.hovered() {
+            theme::TEXTO_TENUE
+        } else {
+            theme::BORDE_FUERTE
+        };
+        p.rect_stroke(
+            caja,
+            radio,
+            egui::Stroke::new(1.0, borde),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let cambio = resp.clicked();
+    if cambio {
+        *marcada = !*marcada;
+    }
+    (cambio, resp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1046,57 +1099,4 @@ mod tests {
             );
         }
     }
-}
-
-/// Casilla compacta y plana: la de egui es grande y con borde grueso, y en
-/// una tabla densa se comía la fila. `parcial` dibuja un guion (cabecera con
-/// algunas filas marcadas). Devuelve si cambió y la respuesta.
-fn casilla(ui: &mut egui::Ui, marcada: &mut bool, parcial: bool) -> (bool, egui::Response) {
-    let lado = 13.0;
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(lado + 4.0, ALTO_FILA - 4.0),
-        egui::Sense::click(),
-    );
-    let caja = egui::Rect::from_center_size(rect.center(), egui::vec2(lado, lado));
-    let p = ui.painter();
-    let radio = 3.0;
-    if *marcada || parcial {
-        p.rect_filled(caja, radio, theme::ACENTO);
-        let trazo = egui::Stroke::new(1.8, theme::FONDO);
-        if *marcada {
-            let a = caja.left_center() + egui::vec2(3.0, 0.5);
-            let b = caja.center() + egui::vec2(-1.0, 3.2);
-            let c = caja.right_top() + egui::vec2(-3.0, 3.5);
-            p.line_segment([a, b], trazo);
-            p.line_segment([b, c], trazo);
-        } else {
-            p.line_segment(
-                [
-                    caja.left_center() + egui::vec2(3.0, 0.0),
-                    caja.right_center() + egui::vec2(-3.0, 0.0),
-                ],
-                trazo,
-            );
-        }
-    } else {
-        if resp.hovered() {
-            p.rect_filled(caja, radio, theme::HOVER);
-        }
-        let borde = if resp.hovered() {
-            theme::TEXTO_TENUE
-        } else {
-            theme::BORDE_FUERTE
-        };
-        p.rect_stroke(
-            caja,
-            radio,
-            egui::Stroke::new(1.0, borde),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let cambio = resp.clicked();
-    if cambio {
-        *marcada = !*marcada;
-    }
-    (cambio, resp)
 }
