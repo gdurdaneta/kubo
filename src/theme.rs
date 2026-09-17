@@ -104,7 +104,9 @@ pub fn aplicar(ctx: &egui::Context) {
     v.faint_bg_color = PANEL_ALT;
     v.override_text_color = Some(TEXTO);
     v.selection.bg_fill = SELECCION;
-    v.selection.stroke = Stroke::NONE;
+    // El color del stroke es el del texto de lo seleccionado (filas de tabla,
+    // botones): con NONE las celdas sin color propio desaparecían.
+    v.selection.stroke = Stroke::new(1.0, TEXTO);
     v.hyperlink_color = ACENTO;
     v.window_stroke = Stroke::new(1.0, BORDE);
     v.window_shadow = egui::epaint::Shadow::NONE;
