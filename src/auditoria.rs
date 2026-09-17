@@ -107,7 +107,7 @@ pub fn anotar(
         detalle,
         ok: resultado.is_ok(),
         error: resultado.err(),
-    });
+    })
 }
 
 /// Últimas `n` entradas, de la más nueva a la más vieja.
