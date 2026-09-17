@@ -185,6 +185,9 @@ impl App {
                     c.namespaces = list;
                 }
             }
+            K8sEvent::PodsResueltos { pane, titulo, pods } => {
+                self.abrir_logs_de_pods(pane, titulo, &pods);
+            }
             K8sEvent::PodResuelto { pane, que, pod } => match que {
                 k8s::pods::QuePod::Logs => self.abrir_logs_de(pane, &pod),
                 k8s::pods::QuePod::Shell => self.abrir_shell_de(pane, &pod),

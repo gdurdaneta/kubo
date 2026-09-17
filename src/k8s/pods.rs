@@ -49,36 +49,58 @@ fn fase(p: &DynamicObject) -> &str {
         .unwrap_or("")
 }
 
-/// Lista los pods del selector y manda el mejor candidato: un Running, o el
-/// primero que haya. Sin pods se avisa con un toast.
+/// Tope de pods cuyos logs se mezclan en un visor: más es ilegible.
+pub const MAX_PODS_LOGS: usize = 20;
+
+/// Lista los pods del selector. Para shell manda el mejor candidato (un
+/// Running, o el primero); para logs, todos (Running primero, con tope).
+/// Sin pods se avisa con un toast.
 pub async fn resolver(
     client: Client,
     ns: String,
     selector: String,
+    titulo: String,
     pane: u64,
     que: QuePod,
     bridge: UiBridge,
 ) {
     let api: Api<DynamicObject> = Api::namespaced_with(client, &ns, &ar_pod());
-    let lp = ListParams::default().labels(&selector).limit(50);
-    let pod = match api.list(&lp).await {
-        Ok(l) => {
-            let mut items = l.items;
-            items.sort_by_key(|p| fase(p) != "Running");
-            items.into_iter().next()
-        }
+    let lp = ListParams::default().labels(&selector).limit(200);
+    let mut items = match api.list(&lp).await {
+        Ok(l) => l.items,
         Err(e) => {
             bridge.toast(format!("no se pudieron listar los pods: {e}"), true);
             return;
         }
     };
-    match pod {
-        Some(p) => bridge.send(K8sEvent::PodResuelto {
+    if items.is_empty() {
+        bridge.toast(format!("no hay pods con {selector} en {ns}"), true);
+        return;
+    }
+    items.sort_by_key(|p| fase(p) != "Running");
+    match que {
+        QuePod::Shell => bridge.send(K8sEvent::PodResuelto {
             pane,
             que,
-            pod: Box::new(p),
+            pod: Box::new(items.remove(0)),
         }),
-        None => bridge.toast(format!("no hay pods con {selector} en {ns}"), true),
+        QuePod::Logs => {
+            if items.len() > MAX_PODS_LOGS {
+                bridge.toast(
+                    format!(
+                        "{titulo}: {} pods, se muestran los primeros {MAX_PODS_LOGS}",
+                        items.len()
+                    ),
+                    false,
+                );
+                items.truncate(MAX_PODS_LOGS);
+            }
+            bridge.send(K8sEvent::PodsResueltos {
+                pane,
+                titulo,
+                pods: items,
+            });
+        }
     }
 }
 

@@ -15,6 +15,8 @@ pub struct LogRequest {
     pub previous: bool,
     pub tail_lines: Option<i64>,
     pub timestamps: bool,
+    /// Con varios pods mezclados en un visor, cada línea dice de cuál viene.
+    pub prefijo: Option<String>,
 }
 
 /// Abre el stream y empuja cada línea a la UI hasta que se aborte la tarea.
@@ -48,7 +50,13 @@ pub async fn stream(client: Client, req: LogRequest, token: u64, bridge: UiBridg
     let mut lines = reader.lines();
     while let Some(item) = lines.next().await {
         match item {
-            Ok(line) => bridge.send(K8sEvent::LogLine { token, line }),
+            Ok(line) => {
+                let line = match &req.prefijo {
+                    Some(p) => format!("[{p}] {line}"),
+                    None => line,
+                };
+                bridge.send(K8sEvent::LogLine { token, line })
+            }
             Err(e) => {
                 bridge.send(K8sEvent::LogClosed {
                     token,

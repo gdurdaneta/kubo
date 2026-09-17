@@ -107,7 +107,10 @@ pub struct Detalle {
 
 pub struct VistaLogs {
     pub ns: String,
+    /// Nombre del pod, o del workload cuando `pods` trae varios.
     pub pod: String,
+    /// Pods cuyos logs se mezclan (vacío = solo `pod`).
+    pub pods: Vec<String>,
     pub contenedores: Vec<String>,
     pub contenedor: Option<String>,
     pub lineas: VecDeque<String>,
@@ -284,6 +287,8 @@ pub enum EstadoPf {
 /// Un port-forward activo hacia un Service.
 pub struct Forward {
     pub id: u64,
+    /// Túnel directo a un pod (sin pasar por un Service).
+    pub pod: bool,
     pub contexto: String,
     pub ns: String,
     pub servicio: String,
@@ -317,6 +322,8 @@ impl Forward {
 
 /// Diálogo de configuración de un port-forward, antes de levantarlo.
 pub struct DialogoPf {
+    /// El destino es un pod concreto (`servicio` lleva su nombre), no un Service.
+    pub pod: bool,
     /// Panel desde el que se pidió; ahí se muestra la lista al levantarlo.
     pub pane: u64,
     pub contexto: String,

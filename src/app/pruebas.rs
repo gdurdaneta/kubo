@@ -23,11 +23,19 @@ impl App {
 
         // KUBO_TEST_PF=ns/servicio — levanta un port-forward con los valores
         // por defecto (sin alias, así no dispara el diálogo de polkit).
+        // Espera a la vista que tenga el recurso (un IRA previo puede estar
+        // cambiando de vista todavía).
         if let Ok(spec) = std::env::var("KUBO_TEST_PF") {
-            if !spec.is_empty() {
+            if !spec.is_empty() && self.objeto_del_pane(pane_id, &spec).is_some() {
                 std::env::set_var("KUBO_TEST_PF", "");
                 std::env::set_var("KUBO_TEST_PF_AUTO", "1");
                 self.pedir_forward(pane_id, &spec);
+                // Con un pod el diálogo queda listo al instante y no hay evento
+                // que dispare el auto-abrir: se hace acá.
+                if self.dialogo_pf.as_ref().is_some_and(|d| d.pod) {
+                    std::env::set_var("KUBO_TEST_PF_AUTO", "");
+                    self.abrir_forward();
+                }
             }
         }
 
@@ -123,6 +131,24 @@ impl App {
             }
         }
 
+        // KUBO_TEST_WL=logs|shell:ns/name — resuelve un pod del workload y
+        // abre logs o shell (espera a que el recurso esté en la vista).
+        if let Ok(spec) = std::env::var("KUBO_TEST_WL") {
+            if let Some((que, key)) = spec.split_once(':') {
+                let que = match que {
+                    "logs" => Some(k8s::pods::QuePod::Logs),
+                    "shell" => Some(k8s::pods::QuePod::Shell),
+                    _ => None,
+                };
+                if let Some(que) = que {
+                    if self.objeto_del_pane(pane_id, key).is_some() {
+                        std::env::set_var("KUBO_TEST_WL", "");
+                        self.resolver_pod_de(pane_id, key, que);
+                    }
+                }
+            }
+        }
+
         // KUBO_TEST_IRA=Kind:ns:name — prueba la navegación "ir al recurso".
         if let Ok(spec) = std::env::var("KUBO_TEST_IRA") {
             if !spec.is_empty() {
@@ -131,24 +157,7 @@ impl App {
                 if let [kind, ns, name] = partes[..] {
                     let (kind, name) = (kind.to_string(), name.to_string());
                     let ns = Some(ns.to_string());
-                    self.ir_a(pane_id, &kind, ns.clone(), &name);
-                    // KUBO_TEST_WL=logs|shell — sobre el recurso recién abierto,
-                    // resuelve un pod del workload y abre logs o shell.
-                    if let Ok(que) = std::env::var("KUBO_TEST_WL") {
-                        let que = match que.as_str() {
-                            "logs" => Some(k8s::pods::QuePod::Logs),
-                            "shell" => Some(k8s::pods::QuePod::Shell),
-                            _ => None,
-                        };
-                        if let Some(que) = que {
-                            std::env::set_var("KUBO_TEST_WL", "");
-                            let key = match ns {
-                                Some(ns) => format!("{ns}/{name}"),
-                                None => name.clone(),
-                            };
-                            self.resolver_pod_de(pane_id, &key, que);
-                        }
-                    }
+                    self.ir_a(pane_id, &kind, ns, &name);
                     return;
                 }
             }

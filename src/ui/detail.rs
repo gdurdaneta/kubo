@@ -130,7 +130,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             {
                 *accion = confirmar(crate::app::Verbo::Escalar(-1));
             }
-            if kind == "Service" && icono(ui, "⇄", "Port-forward: exponerlo en local", true) {
+            if matches!(kind.as_str(), "Service" | "Pod")
+                && icono(ui, "⇄", "Port-forward: exponerlo en local", true)
+            {
                 *accion = Accion::PedirForward(id, key.clone());
             }
 

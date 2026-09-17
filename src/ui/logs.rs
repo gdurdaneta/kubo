@@ -16,6 +16,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(&v.pod).strong());
         ui.colored_label(theme::TEXTO_TENUE, &v.ns);
+        if !v.pods.is_empty() {
+            ui.colored_label(theme::TEXTO_TENUE, format!("{} pods", v.pods.len()))
+                .on_hover_text(v.pods.join("\n"));
+        }
 
         if v.contenedores.len() > 1 {
             let actual = v.contenedor.clone().unwrap_or_default();

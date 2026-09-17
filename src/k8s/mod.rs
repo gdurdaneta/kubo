@@ -191,6 +191,12 @@ pub enum K8sEvent {
         clave: String,
         permisos: permisos::Permisos,
     },
+    /// Todos los pods de un workload (por selector), para mezclar sus logs.
+    PodsResueltos {
+        pane: u64,
+        titulo: String,
+        pods: Vec<DynamicObject>,
+    },
     /// Pod de un workload, resuelto por selector, para abrir logs o shell.
     PodResuelto {
         pane: u64,

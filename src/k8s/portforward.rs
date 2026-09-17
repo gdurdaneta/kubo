@@ -52,6 +52,43 @@ fn ar_service() -> ApiResource {
     }
 }
 
+/// `containerPort`s TCP de un pod, con el formato del combo del diálogo.
+pub fn puertos_de_pod(pod: &DynamicObject) -> Vec<PuertoSvc> {
+    let mut out = Vec::new();
+    let conts = pod
+        .data
+        .get("spec")
+        .and_then(|s| s.get("containers"))
+        .and_then(|v| v.as_array());
+    for c in conts.into_iter().flatten() {
+        let cname = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        for p in c
+            .get("ports")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let proto = p.get("protocol").and_then(|v| v.as_str()).unwrap_or("TCP");
+            let Some(n) = p.get("containerPort").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            if proto != "TCP" || n == 0 || n > u16::MAX as u64 {
+                continue;
+            }
+            let pname = p.get("name").and_then(|v| v.as_str());
+            out.push(PuertoSvc {
+                nombre: Some(match pname {
+                    Some(pn) => format!("{cname}/{pn}"),
+                    None => cname.to_string(),
+                }),
+                puerto: n as u16,
+                target: Target::Numero(n as u16),
+            });
+        }
+    }
+    out
+}
+
 /// Puertos que publica el Service, para que el usuario elija.
 pub async fn puertos_de(client: Client, ns: &str, svc: &str) -> Result<Vec<PuertoSvc>> {
     let api: Api<DynamicObject> = Api::namespaced_with(client, ns, &ar_service());

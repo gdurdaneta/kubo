@@ -17,12 +17,49 @@ impl App {
         let (ns, servicio) = match key.split_once('/') {
             Some((ns, n)) => (ns.to_string(), n.to_string()),
             None => {
-                self.toast("el Service tiene que estar en un namespace", true);
+                self.toast("el recurso tiene que estar en un namespace", true);
                 return;
             }
         };
+        let es_pod = pane
+            .item
+            .as_ref()
+            .is_some_and(|i| i.res.ar.kind == "Pod" && i.res.ar.group.is_empty());
+
+        // A un pod se le tunelizan sus containerPorts directamente: no hay
+        // Service que consultar, así que el diálogo arranca listo.
+        if es_pod {
+            let puertos: Vec<k8s::portforward::PuertoSvc> = pane
+                .store
+                .as_ref()
+                .and_then(|s| s.objeto(key))
+                .map(k8s::portforward::puertos_de_pod)
+                .unwrap_or_default();
+            if puertos.is_empty() {
+                self.toast(
+                    "el pod no declara containerPorts TCP; no hay qué exponer",
+                    true,
+                );
+                return;
+            }
+            let sugerido = k8s::portforward::puerto_local_sugerido(puertos[0].puerto);
+            self.dialogo_pf = Some(DialogoPf {
+                pod: true,
+                pane: pane_id,
+                contexto,
+                ns,
+                servicio,
+                puertos,
+                sel: 0,
+                puerto_local: sugerido.to_string(),
+                alias: false,
+                cargando: false,
+            });
+            return;
+        }
 
         self.dialogo_pf = Some(DialogoPf {
+            pod: false,
             pane: pane_id,
             contexto,
             ns: ns.clone(),
@@ -88,6 +125,7 @@ impl App {
         let host = k8s::portforward::host_de(d.alias, &d.servicio);
         self.forwards.push(Forward {
             id,
+            pod: d.pod,
             contexto: d.contexto.clone(),
             ns: d.ns.clone(),
             servicio: d.servicio.clone(),
@@ -109,7 +147,7 @@ impl App {
         crate::auditoria::anotar(
             &d.contexto,
             "port-forward",
-            "Service",
+            if d.pod { "Pod" } else { "Service" },
             &Some(d.ns.clone()),
             &d.servicio,
             Some(format!(
@@ -133,8 +171,11 @@ impl App {
 
         let (ns, servicio, bridge) = (d.ns.clone(), d.servicio.clone(), self.bridge.clone());
         let addr = std::net::SocketAddr::new(bind, puerto_local);
+        let directo = d.pod;
         let tarea = self.rt.spawn(async move {
-            let (pod, puerto_pod) =
+            let (pod, puerto_pod) = if directo {
+                (servicio.clone(), puerto.puerto)
+            } else {
                 match k8s::portforward::elegir_pod(client.clone(), &ns, &servicio, &puerto).await {
                     Ok(v) => v,
                     Err(e) => {
@@ -144,7 +185,8 @@ impl App {
                         });
                         return;
                     }
-                };
+                }
+            };
             k8s::portforward::servir(client, ns, pod, puerto_pod, addr, id, bridge).await;
         });
         if let Some(f) = self.forwards.iter_mut().find(|f| f.id == id) {

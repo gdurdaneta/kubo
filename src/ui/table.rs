@@ -797,7 +797,7 @@ pub fn menu_acciones(
             ui.close();
         }
     }
-    if kind == "Service"
+    if matches!(kind, "Service" | "Pod")
         && ui
             .button("⇄ Port forward…")
             .on_hover_text("Exponerlo en local")

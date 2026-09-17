@@ -22,7 +22,12 @@ pub fn dialogo(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
         ui.heading("Port forward");
         ui.colored_label(
             theme::TEXTO_TENUE,
-            format!("Service {} · {}", d.servicio, d.ns),
+            format!(
+                "{} {} · {}",
+                if d.pod { "Pod" } else { "Service" },
+                d.servicio,
+                d.ns
+            ),
         );
         ui.add_space(8.0);
 
@@ -34,13 +39,17 @@ pub fn dialogo(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
             return;
         }
         if d.puertos.is_empty() {
-            ui.colored_label(theme::BAD, "el Service no publica puertos TCP");
+            ui.colored_label(theme::BAD, "no publica puertos TCP");
             return;
         }
 
         // --- puerto del servicio ---
         ui.horizontal(|ui| {
-            ui.label("Puerto del servicio");
+            ui.label(if d.pod {
+                "Puerto del contenedor"
+            } else {
+                "Puerto del servicio"
+            });
             let sel = d.sel.min(d.puertos.len() - 1);
             egui::ComboBox::from_id_salt("pf_puerto")
                 .selected_text(d.puertos[sel].etiqueta())
@@ -210,11 +219,12 @@ fn fila(ui: &mut egui::Ui, f: &crate::app::Forward, accion: &mut Accion) {
                     ui.colored_label(
                         theme::TEXTO_TENUE,
                         format!(
-                            "{} · {} · {} · puerto {} del servicio{}",
+                            "{} · {} · {} · puerto {} del {}{}",
                             acortar_ctx(&f.contexto),
                             f.ns,
                             f.servicio,
                             f.puerto_svc,
+                            if f.pod { "pod" } else { "servicio" },
                             if f.conexiones > 0 {
                                 format!(" · {} conexiones", f.conexiones)
                             } else {

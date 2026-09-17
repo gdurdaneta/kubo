@@ -43,9 +43,66 @@ impl App {
             return;
         };
         let bridge = self.bridge.clone();
+        let titulo = kube::ResourceExt::name_any(&obj);
         self.rt.spawn(async move {
-            k8s::pods::resolver(client, ns, selector, pane_id, que, bridge).await;
+            k8s::pods::resolver(client, ns, selector, titulo, pane_id, que, bridge).await;
         });
+    }
+
+    /// Logs de varios pods (un workload) mezclados en un visor, cada línea
+    /// con el nombre del pod adelante.
+    pub fn abrir_logs_de_pods(
+        &mut self,
+        pane_id: u64,
+        titulo: String,
+        pods: &[kube::api::DynamicObject],
+    ) {
+        let Some(primero) = pods.first() else { return };
+        if pods.len() == 1 {
+            self.abrir_logs_de(pane_id, primero);
+            return;
+        }
+        let Some(ns) = kube::ResourceExt::namespace(primero) else {
+            return;
+        };
+        let nombres: Vec<String> = pods.iter().map(kube::ResourceExt::name_any).collect();
+        let contenedores = contenedores_de(primero);
+        crate::auditoria::anotar(
+            &self.contexto_del_pane(pane_id),
+            "logs",
+            "Pod",
+            &Some(ns.clone()),
+            &titulo,
+            Some(format!("{} pods", nombres.len())),
+            Ok(()),
+        );
+        if let Some(pane) = self.pane(pane_id) {
+            pane.cerrar_bottom();
+            // El contenedor principal suele llamarse como el workload; si no,
+            // el primero (que a veces es un sidecar, pero es el mismo criterio
+            // que kubectl logs).
+            let contenedor = contenedores
+                .iter()
+                .find(|c| **c == titulo)
+                .or_else(|| contenedores.first())
+                .cloned();
+            pane.bottom = Some(Bottom::Logs(Box::new(VistaLogs {
+                ns,
+                pod: titulo,
+                pods: nombres,
+                contenedores,
+                contenedor,
+                lineas: VecDeque::new(),
+                filtro: String::new(),
+                follow: true,
+                previous: false,
+                tail: 200,
+                token: 0,
+                cerrado: None,
+                tarea: None,
+            })));
+        }
+        self.reiniciar_logs(pane_id);
     }
 
     pub fn abrir_logs_de(&mut self, pane_id: u64, obj: &kube::api::DynamicObject) {
@@ -70,6 +127,7 @@ impl App {
             pane.bottom = Some(Bottom::Logs(Box::new(VistaLogs {
                 ns,
                 pod,
+                pods: Vec::new(),
                 contenedores,
                 contenedor,
                 lineas: VecDeque::new(),
@@ -106,17 +164,32 @@ impl App {
         v.cerrado = None;
         v.token = token;
 
-        let req = k8s::logs::LogRequest {
-            namespace: v.ns.clone(),
-            pod: v.pod.clone(),
-            container: v.contenedor.clone(),
-            follow: v.follow,
-            previous: v.previous,
-            tail_lines: Some(v.tail),
-            timestamps: false,
+        let pods: Vec<String> = if v.pods.is_empty() {
+            vec![v.pod.clone()]
+        } else {
+            v.pods.clone()
         };
+        let varios = pods.len() > 1;
+        let reqs: Vec<k8s::logs::LogRequest> = pods
+            .into_iter()
+            .map(|pod| k8s::logs::LogRequest {
+                namespace: v.ns.clone(),
+                prefijo: varios.then(|| pod.clone()),
+                pod,
+                container: v.contenedor.clone(),
+                follow: v.follow,
+                previous: v.previous,
+                tail_lines: Some(v.tail),
+                timestamps: false,
+            })
+            .collect();
+        // Un solo task padre: abortarlo suelta todos los streams.
         v.tarea = Some(rt.spawn(async move {
-            k8s::logs::stream(client, req, token, bridge).await;
+            futures::future::join_all(
+                reqs.into_iter()
+                    .map(|req| k8s::logs::stream(client.clone(), req, token, bridge.clone())),
+            )
+            .await;
         }));
     }
 
