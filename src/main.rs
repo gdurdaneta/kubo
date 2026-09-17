@@ -52,6 +52,13 @@ fn icono() -> egui::IconData {
 /// no le falta ningún símbolo— sin necesidad de un escritorio.
 fn atajo_de_linea_de_comandos() -> bool {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args
+        .iter()
+        .any(|a| a == "--solo-lectura" || a == "--read-only")
+        || std::env::var("KUBO_SOLO_LECTURA").is_ok_and(|v| !v.is_empty() && v != "0")
+    {
+        app::SOLO_LECTURA.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     match args.first().map(String::as_str) {
         Some("--version" | "-V") => {
             println!("kubo {}", env!("CARGO_PKG_VERSION"));
@@ -67,8 +74,10 @@ fn atajo_de_linea_de_comandos() -> bool {
                  kubeconfig (KUBECONFIG o ~/.kube/config).\n\
                  \n\
                  Opciones:\n\
-                 \x20 -V, --version   Versión y salir\n\
-                 \x20 -h, --help      Esta ayuda\n\
+                 \x20 -V, --version     Versión y salir\n\
+                 \x20 -h, --help        Esta ayuda\n\
+                 \x20 --solo-lectura    Sin acciones que muten el cluster ni shell\n\
+                 \x20                   (también KUBO_SOLO_LECTURA=1)\n\
                  \n\
                  Dentro de la app, F1 muestra los atajos de teclado.",
                 env!("CARGO_PKG_VERSION")

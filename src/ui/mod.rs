@@ -288,7 +288,13 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
         Accion::AbrirForward => app.abrir_forward(),
         Accion::CerrarForward(id) => app.cerrar_forward(id),
         Accion::VerVistaLocal(id, v) => app.ver_vista_local(id, v),
-        Accion::Confirmar(c) => app.confirm = Some(c),
+        Accion::Confirmar(c) => {
+            if crate::app::solo_lectura() {
+                app.toast("kubo está en modo solo lectura", true);
+            } else {
+                app.confirm = Some(c);
+            }
+        }
     }
 }
 
@@ -300,6 +306,11 @@ fn barra_app(app: &App, ui: &mut egui::Ui, accion: &mut Accion, ver_atajos: &mut
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.label(egui::RichText::new("kubo").strong());
+                if crate::app::solo_lectura() {
+                    ui.colored_label(theme::WARN, "SOLO LECTURA").on_hover_text(
+                        "Arrancado con --solo-lectura: sin acciones que muten el cluster ni shell",
+                    );
+                }
                 ui.separator();
                 if app.panes.len() < MAX_PANES
                     && ui

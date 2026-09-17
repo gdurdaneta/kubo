@@ -184,13 +184,21 @@ pub async fn aplicar_yaml(
             Err(e.to_string())
         }
     };
+    // Qué se aplicó, sin guardar el manifiesto entero: líneas y un hash
+    // estable para poder cotejar contra el YAML si hace falta.
+    let hash = {
+        use std::hash::{Hash as _, Hasher as _};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        yaml.hash(&mut h);
+        h.finish()
+    };
     crate::auditoria::anotar(
         &contexto,
         "aplicar",
         &ar.kind,
         &esperado_ns,
         &name,
-        None,
+        Some(format!("{} líneas, hash {hash:016x}", yaml.lines().count())),
         resultado,
     );
 }

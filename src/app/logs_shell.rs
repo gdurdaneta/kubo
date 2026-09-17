@@ -54,6 +54,15 @@ impl App {
         };
         let pod = kube::ResourceExt::name_any(obj);
         let contenedores = contenedores_de(obj);
+        crate::auditoria::anotar(
+            &self.contexto_del_pane(pane_id),
+            "logs",
+            "Pod",
+            &Some(ns.clone()),
+            &pod,
+            contenedores.first().cloned(),
+            Ok(()),
+        );
 
         if let Some(pane) = self.pane(pane_id) {
             pane.cerrar_bottom();
@@ -119,6 +128,10 @@ impl App {
     }
 
     pub fn abrir_shell_de(&mut self, pane_id: u64, obj: &kube::api::DynamicObject) {
+        if super::solo_lectura() {
+            self.toast("kubo está en modo solo lectura: sin shell", true);
+            return;
+        }
         let token = self.token();
         let Some(client) = self.client_del_pane(pane_id) else {
             return;
@@ -128,6 +141,17 @@ impl App {
         };
         let pod = kube::ResourceExt::name_any(obj);
         let contenedor = contenedores_de(obj).first().cloned();
+        // Una shell dentro de un pod es lo más sensible que hace kubo: queda
+        // en la auditoría aunque no mute nada.
+        crate::auditoria::anotar(
+            &self.contexto_del_pane(pane_id),
+            "shell",
+            "Pod",
+            &Some(ns.clone()),
+            &pod,
+            contenedor.clone(),
+            Ok(()),
+        );
 
         let (stdin_tx, stdin_rx) = tokio::sync::mpsc::unbounded_channel();
         let (resize_tx, resize_rx) = tokio::sync::mpsc::unbounded_channel();

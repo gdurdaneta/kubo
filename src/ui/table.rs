@@ -776,11 +776,13 @@ pub fn menu_acciones(
         *accion = Accion::AbrirDetalle(pane_id, key.to_string());
         ui.close();
     }
-    if ui
-        .add_enabled(puede("update"), egui::Button::new("✎ Editar manifiesto…"))
-        .on_hover_text("Abre el YAML del objeto para editarlo y aplicarlo")
-        .on_disabled_hover_text(ayuda_rbac)
-        .clicked()
+    let ro = crate::app::solo_lectura();
+    if !ro
+        && ui
+            .add_enabled(puede("update"), egui::Button::new("✎ Editar manifiesto…"))
+            .on_hover_text("Abre el YAML del objeto para editarlo y aplicarlo")
+            .on_disabled_hover_text(ayuda_rbac)
+            .clicked()
     {
         *accion = Accion::EditarManifiesto(pane_id, key.to_string());
         ui.close();
@@ -790,7 +792,7 @@ pub fn menu_acciones(
             *accion = Accion::AbrirLogs(pane_id, key.to_string());
             ui.close();
         }
-        if ui.button("Shell").clicked() {
+        if !ro && ui.button("Shell").clicked() {
             *accion = Accion::AbrirShell(pane_id, key.to_string());
             ui.close();
         }
@@ -807,6 +809,11 @@ pub fn menu_acciones(
     if tiene_mapa(kind) && ui.button("Mapa").clicked() {
         *accion = Accion::AbrirDetalleTab(pane_id, key.to_string(), TabDetalle::Mapa);
         ui.close();
+    }
+    if ro {
+        ui.separator();
+        ui.colored_label(theme::TEXTO_TENUE, "solo lectura: sin acciones");
+        return;
     }
     ui.separator();
     if escalable(kind)
@@ -982,27 +989,34 @@ fn barra_lote(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(format!("{} seleccionados", claves.len())).strong());
                 ui.separator();
+                let ro = crate::app::solo_lectura();
+                if ro {
+                    ui.colored_label(theme::TEXTO_TENUE, "solo lectura: sin acciones en lote");
+                }
                 let verbo_reinicio = if kind == "Pod" { "delete" } else { "patch" };
-                if reiniciable(kind)
+                if !ro
+                    && reiniciable(kind)
                     && ui
                         .add_enabled(puede(verbo_reinicio), egui::Button::new("↻ Reiniciar"))
                         .clicked()
                 {
                     *accion = confirmar(Verbo::Reiniciar);
                 }
-                if escalable(kind)
+                if !ro
+                    && escalable(kind)
                     && ui
                         .add_enabled(puede("patch"), egui::Button::new("⇅ Escalar…"))
                         .clicked()
                 {
                     *accion = confirmar(Verbo::Escalar(-1));
                 }
-                if ui
-                    .add_enabled(
-                        puede("delete"),
-                        egui::Button::new(egui::RichText::new("Borrar").color(theme::BAD)),
-                    )
-                    .clicked()
+                if !ro
+                    && ui
+                        .add_enabled(
+                            puede("delete"),
+                            egui::Button::new(egui::RichText::new("Borrar").color(theme::BAD)),
+                        )
+                        .clicked()
                 {
                     *accion = confirmar(Verbo::Borrar);
                 }

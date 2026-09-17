@@ -105,6 +105,25 @@ impl App {
         if let Some(p) = self.pane(d.pane) {
             p.vista_local = Some(VistaLocal::PortForwards);
         }
+        // Un túnel expone un servicio del cluster en esta máquina: se audita.
+        crate::auditoria::anotar(
+            &d.contexto,
+            "port-forward",
+            "Service",
+            &Some(d.ns.clone()),
+            &d.servicio,
+            Some(format!(
+                "{}:{} → {bind}:{puerto_local}{}",
+                d.servicio,
+                puerto.puerto,
+                if d.alias {
+                    " (alias en /etc/hosts)"
+                } else {
+                    ""
+                }
+            )),
+            Ok(()),
+        );
 
         // El alias va primero: si el usuario cancela el diálogo de polkit, no
         // tiene sentido dejar el listener arriba con un nombre que no resuelve.

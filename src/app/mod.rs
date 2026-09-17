@@ -14,6 +14,15 @@ use crate::k8s::{self, ClusterInfo, EventRow, K8sEvent, UiBridge, WatchMsg};
 use crate::nav::{NavCategory, NavItem, VistaLocal};
 use crate::store::Store;
 
+/// Modo solo lectura (`--solo-lectura` o `KUBO_SOLO_LECTURA=1`): la UI no
+/// ofrece nada que mute el cluster ni abra una shell, y aunque algo llegue a
+/// pedirlo, se frena acá. Se fija una vez al arrancar.
+pub static SOLO_LECTURA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn solo_lectura() -> bool {
+    SOLO_LECTURA.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Tope de líneas en el visor de logs; más que esto no se lee y cuesta memoria.
 const MAX_LINEAS_LOG: usize = 5_000;
 pub const MAX_PANES: usize = 4;

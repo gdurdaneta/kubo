@@ -35,6 +35,10 @@ impl App {
     /// Ejecuta la acción ya confirmada del modal.
     pub fn ejecutar_confirmada(&mut self) {
         let Some(c) = self.confirm.take() else { return };
+        if super::solo_lectura() {
+            self.toast("kubo está en modo solo lectura", true);
+            return;
+        }
         let (Some(client), Some(ar)) = (self.client_del_pane(c.pane), self.ar_del_pane(c.pane))
         else {
             return;
@@ -86,6 +90,10 @@ impl App {
     }
 
     pub fn aplicar_yaml(&mut self, pane_id: u64, yaml: String) {
+        if super::solo_lectura() {
+            self.toast("kubo está en modo solo lectura", true);
+            return;
+        }
         // El nombre/ns esperados salen del detalle abierto, no del YAML.
         let Some((name, ns, kind, revelar, original)) = self
             .panes

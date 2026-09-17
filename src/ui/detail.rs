@@ -86,7 +86,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                 })
             };
 
-            if icono(ui, "✎", "Editar el manifiesto YAML y aplicarlo", true) {
+            let ro = crate::app::solo_lectura();
+            if !ro && icono(ui, "✎", "Editar el manifiesto YAML y aplicarlo", true) {
                 // El YAML ya se pidió al abrir el detalle: basta con saltar a
                 // la pestaña, y como el tab bar se dibuja después se ve en este
                 // mismo frame. Si todavía no llegó la copia del API server, el
@@ -96,14 +97,14 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             }
             let es_workload = crate::ui::table::escalable(&kind) || kind == "DaemonSet";
             if kind == "Pod" {
-                if icono(ui, ">_", "Shell en el pod", true) {
+                if !ro && icono(ui, ">_", "Shell en el pod", true) {
                     *accion = Accion::AbrirShell(id, key.clone());
                 }
                 if icono(ui, "≡", "Logs del pod", true) {
                     *accion = Accion::AbrirLogs(id, key.clone());
                 }
             } else if es_workload {
-                if icono(ui, ">_", "Shell en un pod del workload", true) {
+                if !ro && icono(ui, ">_", "Shell en un pod del workload", true) {
                     *accion =
                         Accion::PodDeWorkload(id, key.clone(), crate::k8s::pods::QuePod::Shell);
                 }
@@ -112,7 +113,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                         Accion::PodDeWorkload(id, key.clone(), crate::k8s::pods::QuePod::Logs);
                 }
             }
-            if crate::ui::table::reiniciable(&kind) {
+            if !ro && crate::ui::table::reiniciable(&kind) {
                 let verbo = if kind == "Pod" { "delete" } else { "patch" };
                 let ayuda = if kind == "Pod" {
                     "Reiniciar: borra el pod y su controlador lo recrea"
@@ -123,7 +124,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     *accion = confirmar(crate::app::Verbo::Reiniciar);
                 }
             }
-            if crate::ui::table::escalable(&kind)
+            if !ro
+                && crate::ui::table::escalable(&kind)
                 && icono(ui, "⇅", "Escalar réplicas", puede("patch"))
             {
                 *accion = confirmar(crate::app::Verbo::Escalar(-1));

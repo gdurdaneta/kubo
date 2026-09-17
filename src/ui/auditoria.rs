@@ -96,7 +96,8 @@ pub fn vista(_app: &mut App, ui: &mut egui::Ui, _pane_id: u64, _accion: &mut Acc
 fn color_verbo(v: &str) -> egui::Color32 {
     match v {
         "borrar" => theme::BAD,
-        "escalar" | "reiniciar" => theme::WARN,
+        "aplicar" | "escalar" | "reiniciar" | "shell" => theme::WARN,
+        "logs" | "port-forward" => theme::TEXTO_TENUE,
         _ => theme::TEXTO,
     }
 }

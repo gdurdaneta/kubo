@@ -19,7 +19,7 @@ pub struct Entrada {
     /// Instante en UTC, ISO 8601.
     pub ts: String,
     pub contexto: String,
-    /// borrar | escalar | reiniciar | aplicar
+    /// borrar | escalar | reiniciar | aplicar | shell | logs | port-forward
     pub verbo: String,
     pub kind: String,
     pub ns: Option<String>,
