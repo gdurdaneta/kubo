@@ -47,9 +47,28 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
     let modal = egui::Modal::new(egui::Id::new("confirmacion")).show(ctx, |ui| {
         let c = app.confirm.as_mut().unwrap();
         ui.set_width(if c.diff.is_some() { 640.0 } else { 360.0 });
-        let destino = match &c.ns {
-            Some(ns) => format!("{} «{}» en {ns}", c.kind, c.name),
-            None => format!("{} «{}»", c.kind, c.name),
+        let destino = if c.extra.is_empty() {
+            match &c.ns {
+                Some(ns) => format!("{} «{}» en {ns}", c.kind, c.name),
+                None => format!("{} «{}»", c.kind, c.name),
+            }
+        } else {
+            format!(
+                "{} {}",
+                c.cantidad(),
+                crate::nav::plural_legible(&c.kind).to_lowercase()
+            )
+        };
+        let lote: Vec<String> = if c.extra.is_empty() {
+            Vec::new()
+        } else {
+            std::iter::once((&c.ns, &c.name))
+                .chain(c.extra.iter().map(|(ns, n)| (ns, n)))
+                .map(|(ns, n)| match ns {
+                    Some(ns) => format!("{ns}/{n}"),
+                    None => n.clone(),
+                })
+                .collect()
         };
 
         // El cluster va primero y bien visible. Con varios paneles abiertos
@@ -173,6 +192,17 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
             }
         }
 
+        if !lote.is_empty() {
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical()
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    for l in &lote {
+                        ui.colored_label(theme::TEXTO_TENUE, format!("• {l}"));
+                    }
+                });
+        }
+
         // En producción, borrar, aplicar o dejar sin pods exige teclear el
         // nombre: el clic reflejo no alcanza.
         let prod = contexto.as_deref().is_some_and(parece_produccion)
@@ -180,18 +210,29 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
         let tecleo = prod && requiere_tecleo(&c.verbo);
         let mut habilitado = true;
         if tecleo {
+            // De a uno se teclea el nombre; en lote, la cantidad: obliga a
+            // mirar cuántos son.
+            let esperado = if c.extra.is_empty() {
+                c.name.clone()
+            } else {
+                c.cantidad().to_string()
+            };
             ui.add_space(10.0);
             ui.colored_label(
                 theme::BAD,
-                format!("Producción: escribí «{}» para confirmar", c.name),
+                if c.extra.is_empty() {
+                    format!("Producción: escribí «{esperado}» para confirmar")
+                } else {
+                    format!("Producción: escribí «{esperado}» (la cantidad) para confirmar")
+                },
             );
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut c.tecleado)
-                    .hint_text(&c.name)
+                    .hint_text(&esperado)
                     .desired_width(f32::INFINITY),
             );
             resp.request_focus();
-            habilitado = c.tecleado.trim() == c.name;
+            habilitado = c.tecleado.trim() == esperado;
         }
 
         ui.add_space(12.0);

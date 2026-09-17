@@ -150,6 +150,8 @@ pub struct Pane {
     /// Fila resaltada por teclado. Índice sobre la vista filtrada y ordenada,
     /// así que se re-acota en cada dibujo.
     pub cursor: Option<usize>,
+    /// Filas marcadas con la casilla (claves `ns/nombre`) para actuar en lote.
+    pub seleccion: HashSet<String>,
     pub watch_token: u64,
     pub watch_tarea: Option<JoinHandle<()>>,
     /// Backends por Service (`ns/servicio -> conteo`), solo en la vista Services.
@@ -190,6 +192,7 @@ impl Pane {
             store: None,
             busqueda: String::new(),
             cursor: None,
+            seleccion: HashSet::new(),
             watch_token: 0,
             watch_tarea: None,
             endpoints: HashMap::new(),
@@ -225,6 +228,7 @@ impl Pane {
         self.detalle = None;
         self.busqueda.clear();
         self.cursor = None;
+        self.seleccion.clear();
     }
 
     fn parar_endpoints(&mut self) {
@@ -327,6 +331,28 @@ pub struct Confirmacion {
     pub diff: Option<String>,
     /// Lo que el usuario tecleó para confirmar en producción.
     pub tecleado: String,
+    /// Más objetivos del mismo kind (lote): `(namespace, nombre)`.
+    pub extra: Vec<(Option<String>, String)>,
+}
+
+impl Confirmacion {
+    pub fn simple(pane: u64, verbo: Verbo, kind: String, ns: Option<String>, name: String) -> Self {
+        Self {
+            pane,
+            verbo,
+            kind,
+            ns,
+            name,
+            diff: None,
+            tecleado: String::new(),
+            extra: Vec::new(),
+        }
+    }
+
+    /// Cuántos recursos toca en total.
+    pub fn cantidad(&self) -> usize {
+        1 + self.extra.len()
+    }
 }
 
 #[derive(PartialEq, Eq)]

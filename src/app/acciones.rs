@@ -41,34 +41,47 @@ impl App {
         };
         let ctx = self.contexto_del_pane(c.pane);
         let bridge = self.bridge.clone();
-        match c.verbo {
-            Verbo::Borrar => {
-                self.rt.spawn(async move {
-                    k8s::actions::borrar(client, ar, c.ns, c.name, ctx, bridge).await;
-                });
-            }
-            Verbo::Reiniciar => {
-                if c.kind == "Pod" {
-                    // Reiniciar un pod es borrarlo: el controlador lo repone.
+        // Aplicar YAML es de a uno; el resto acepta lote: una tarea por
+        // objetivo, cada una con su toast y su línea de auditoría.
+        if let Verbo::AplicarYaml(yaml) = c.verbo {
+            self.rt.spawn(async move {
+                k8s::actions::aplicar_yaml(client, ar, yaml, c.name, c.ns, ctx, bridge).await;
+            });
+            return;
+        }
+        let objetivos = std::iter::once((c.ns.clone(), c.name.clone())).chain(c.extra.into_iter());
+        for (ns, name) in objetivos {
+            let (client, ar, ctx, bridge) =
+                (client.clone(), ar.clone(), ctx.clone(), bridge.clone());
+            match c.verbo {
+                Verbo::Borrar => {
                     self.rt.spawn(async move {
-                        k8s::actions::borrar(client, ar, c.ns, c.name, ctx, bridge).await;
-                    });
-                } else {
-                    self.rt.spawn(async move {
-                        k8s::actions::reiniciar(client, ar, c.ns, c.name, ctx, bridge).await;
+                        k8s::actions::borrar(client, ar, ns, name, ctx, bridge).await;
                     });
                 }
+                Verbo::Reiniciar => {
+                    if c.kind == "Pod" {
+                        // Reiniciar un pod es borrarlo: el controlador lo repone.
+                        self.rt.spawn(async move {
+                            k8s::actions::borrar(client, ar, ns, name, ctx, bridge).await;
+                        });
+                    } else {
+                        self.rt.spawn(async move {
+                            k8s::actions::reiniciar(client, ar, ns, name, ctx, bridge).await;
+                        });
+                    }
+                }
+                Verbo::Escalar(n) => {
+                    self.rt.spawn(async move {
+                        k8s::actions::escalar(client, ar, ns, name, n, ctx, bridge).await;
+                    });
+                }
+                Verbo::AplicarYaml(_) => unreachable!(),
             }
-            Verbo::Escalar(n) => {
-                self.rt.spawn(async move {
-                    k8s::actions::escalar(client, ar, c.ns, c.name, n, ctx, bridge).await;
-                });
-            }
-            Verbo::AplicarYaml(yaml) => {
-                self.rt.spawn(async move {
-                    k8s::actions::aplicar_yaml(client, ar, yaml, c.name, c.ns, ctx, bridge).await;
-                });
-            }
+        }
+        // La selección ya se consumió.
+        if let Some(p) = self.pane(c.pane) {
+            p.seleccion.clear();
         }
     }
 
@@ -113,6 +126,7 @@ impl App {
             name,
             diff: Some(diff),
             tecleado: String::new(),
+            extra: Vec::new(),
         });
     }
 }

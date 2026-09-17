@@ -5,10 +5,14 @@ use egui_extras::{Column, TableBuilder};
 
 use super::Accion;
 use crate::app::{App, Confirmacion, TabDetalle, Verbo};
-use crate::columns::{self, ColSpec};
+use crate::columns::{self, ColSpec, Tone};
 use crate::theme;
 
 const ALTO_FILA: f32 = 21.0;
+/// Columna de la casilla de selección múltiple.
+const ANCHO_CASILLA: f32 = 22.0;
+/// Columna del menú ⋮ de cada fila.
+const ANCHO_MENU: f32 = 24.0;
 /// Ancho asumido para la columna elástica al medir si la tabla entra a lo ancho.
 const ANCHO_ELASTICA: f32 = 220.0;
 /// Hasta dónde se puede achicar una columna antes de dejar de servir.
@@ -172,6 +176,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let metricas = columns::tiene_metricas(&kind).then_some(&pane.metricas);
     // Ya se resolvió arriba, antes de prestar el store mutablemente.
     let permisos = permisos.as_ref();
+    let seleccion = &mut pane.seleccion;
     let Some(store) = pane.store.as_mut() else {
         return;
     };
@@ -218,6 +223,29 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
             abrir = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
             cerrar = i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
         });
+    }
+
+    // Espacio marca la fila del cursor.
+    if filas > 0 && ui.ctx().memory(|m| m.focused().is_none()) {
+        let espacio = ui
+            .ctx()
+            .input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
+        if espacio {
+            if let Some((k, _, _)) = cursor.and_then(|c| store.fila(c)) {
+                let k = k.to_string();
+                if !seleccion.remove(&k) {
+                    seleccion.insert(k);
+                }
+            }
+        }
+    }
+    // Lo marcado que ya no existe (se borró, cambió el filtro no importa) se
+    // olvida para no actuar sobre fantasmas.
+    if !store.cargando {
+        seleccion.retain(|k| store.objeto(k).is_some());
+    }
+    if !seleccion.is_empty() {
+        barra_lote(ui, id, &kind, seleccion, permisos, accion);
     }
 
     if store.cargando && filas == 0 {
@@ -270,7 +298,13 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let mut clic_en: Option<usize> = None;
     let cabeceras = columns::headers(&kind, mostrar_ns, store.columnas_crd());
     let sep = ui.spacing().item_spacing.x;
-    let (anchos, scrollear) = repartir_anchos(&cabeceras, ui.available_width(), sep);
+    // Las columnas fijas de casilla (izquierda) y menú (derecha) no entran
+    // en el reparto.
+    let (anchos, scrollear) = repartir_anchos(
+        &cabeceras,
+        ui.available_width() - ANCHO_CASILLA - ANCHO_MENU - 2.0 * sep,
+        sep,
+    );
     let ancho_pedido: f32 = anchos.iter().sum::<f32>() + sep * cabeceras.len() as f32;
 
     // Con el detalle abierto (o en paneles muy angostos) ni encogidas entran;
@@ -296,6 +330,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
                     cursor,
                     mover != 0,
                     &mut clic_en,
+                    seleccion,
                     accion,
                 );
             });
@@ -315,6 +350,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
             cursor,
             mover != 0,
             &mut clic_en,
+            seleccion,
             accion,
         );
     }
@@ -341,6 +377,7 @@ fn cuerpo(
     cursor: Option<usize>,
     seguir_cursor: bool,
     clic_en: &mut Option<usize>,
+    seleccion: &mut std::collections::HashSet<String>,
     accion: &mut Accion,
 ) {
     let es_pod = kind == "Pod";
@@ -367,13 +404,36 @@ fn cuerpo(
         .min_scrolled_height(0.0)
         .auto_shrink([false, false]);
 
+    builder = builder.column(Column::exact(ANCHO_CASILLA));
     for (i, _) in cabeceras.iter().enumerate() {
         let w = anchos.get(i).copied().unwrap_or(ANCHO_ELASTICA);
         builder = builder.column(Column::initial(w).at_least(40.0).clip(true));
     }
+    builder = builder.column(Column::exact(ANCHO_MENU));
 
     builder
         .header(22.0, |mut header| {
+            // Casilla maestra: marca o desmarca todo lo visible.
+            header.col(|ui| {
+                let visibles: Vec<String> = (0..filas)
+                    .filter_map(|i| store.fila(i).map(|(k, _, _)| k.to_string()))
+                    .collect();
+                let todas = !visibles.is_empty() && visibles.iter().all(|k| seleccion.contains(k));
+                let mut marcada = todas;
+                if ui
+                    .checkbox(&mut marcada, "")
+                    .on_hover_text("Seleccionar todo lo visible")
+                    .changed()
+                {
+                    if marcada {
+                        seleccion.extend(visibles);
+                    } else {
+                        for k in &visibles {
+                            seleccion.remove(k);
+                        }
+                    }
+                }
+            });
             for (i, c) in cabeceras.iter().enumerate() {
                 header.col(|ui| {
                     let flecha = if i == sort_col {
@@ -402,6 +462,7 @@ fn cuerpo(
                     }
                 });
             }
+            header.col(|_| {});
         })
         .body(|body| {
             body.rows(ALTO_FILA, filas, |mut row| {
@@ -411,10 +472,25 @@ fn cuerpo(
                 };
                 let key = key.to_string();
                 let es_cursor = cursor == Some(idx);
-                row.set_selected(sel_key.as_deref() == Some(key.as_str()) || es_cursor);
+                let marcada = seleccion.contains(&key);
+                row.set_selected(sel_key.as_deref() == Some(key.as_str()) || es_cursor || marcada);
 
+                row.col(|ui| {
+                    let mut m = marcada;
+                    if ui.checkbox(&mut m, "").changed() {
+                        if m {
+                            seleccion.insert(key.clone());
+                        } else {
+                            seleccion.remove(&key);
+                        }
+                    }
+                });
                 for celda in celdas {
                     row.col(|ui| {
+                        if let Some(cuadros) = &celda.cuadros {
+                            celda_cuadros(ui, cuadros);
+                            return;
+                        }
                         ui.add(
                             egui::Label::new(
                                 egui::RichText::new(&celda.text)
@@ -440,8 +516,21 @@ fn cuerpo(
                 row.col(|ui| {
                     ui.colored_label(theme::TEXTO_TENUE, columns::edad(creado));
                 });
+                row.col(|ui| {
+                    let (ns_m, nombre_m) = partir_key(&key);
+                    ui.menu_button("⋮", |ui| {
+                        menu_acciones(ui, pane_id, kind, &key, ns_m, nombre_m, permisos, accion);
+                    });
+                });
 
                 let resp = row.response();
+                // Ctrl+clic marca la fila sin abrir el detalle.
+                if resp.clicked() && resp.ctx.input(|i| i.modifiers.command) {
+                    if !seleccion.remove(&key) {
+                        seleccion.insert(key.clone());
+                    }
+                    return;
+                }
                 // Al moverse con el teclado la fila tiene que entrar en pantalla.
                 if es_cursor && seguir_cursor {
                     resp.scroll_to_me(None);
@@ -734,6 +823,7 @@ pub fn menu_acciones(
             name: nombre.clone(),
             diff: None,
             tecleado: String::new(),
+            extra: Vec::new(),
         });
         ui.close();
     }
@@ -753,6 +843,7 @@ pub fn menu_acciones(
             name: nombre.clone(),
             diff: None,
             tecleado: String::new(),
+            extra: Vec::new(),
         });
         ui.close();
     }
@@ -772,6 +863,7 @@ pub fn menu_acciones(
             name: nombre,
             diff: None,
             tecleado: String::new(),
+            extra: Vec::new(),
         });
         ui.close();
     }
@@ -842,4 +934,91 @@ mod tests {
             );
         }
     }
+}
+
+/// Cuadritos de color, uno por contenedor.
+fn celda_cuadros(ui: &mut egui::Ui, cuadros: &[Tone]) {
+    let lado = 9.0;
+    let sep = 3.0;
+    let ancho = cuadros.len() as f32 * (lado + sep);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ancho.max(lado), lado), egui::Sense::hover());
+    let y = rect.center().y;
+    for (i, t) in cuadros.iter().enumerate() {
+        let x = rect.left() + i as f32 * (lado + sep);
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(egui::pos2(x, y - lado / 2.0), egui::vec2(lado, lado)),
+            egui::CornerRadius::same(1),
+            theme::color_tono(*t),
+        );
+    }
+    let listos = cuadros.iter().filter(|t| **t == Tone::Ok).count();
+    resp.on_hover_text(format!("{listos}/{} contenedores listos", cuadros.len()));
+}
+
+/// Barra que aparece con filas marcadas: acciones sobre todas a la vez.
+fn barra_lote(
+    ui: &mut egui::Ui,
+    pane_id: u64,
+    kind: &str,
+    seleccion: &mut std::collections::HashSet<String>,
+    permisos: Option<&crate::k8s::permisos::Permisos>,
+    accion: &mut Accion,
+) {
+    let puede = |verbo: &str| !permisos.is_some_and(|p| p.prohibido(verbo));
+    let mut claves: Vec<String> = seleccion.iter().cloned().collect();
+    claves.sort();
+    let confirmar = |verbo: Verbo| {
+        let mut objetivos = claves.iter().map(|k| partir_key(k));
+        let (ns, name) = objetivos.next().expect("hay selección");
+        let mut c = Confirmacion::simple(pane_id, verbo, kind.to_string(), ns, name);
+        c.extra = objetivos.collect();
+        Accion::Confirmar(c)
+    };
+    egui::Frame::new()
+        .fill(theme::SELECCION)
+        .inner_margin(egui::Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("{} seleccionados", claves.len())).strong());
+                ui.separator();
+                let verbo_reinicio = if kind == "Pod" { "delete" } else { "patch" };
+                if reiniciable(kind)
+                    && ui
+                        .add_enabled(puede(verbo_reinicio), egui::Button::new("↻ Reiniciar"))
+                        .clicked()
+                {
+                    *accion = confirmar(Verbo::Reiniciar);
+                }
+                if escalable(kind)
+                    && ui
+                        .add_enabled(puede("patch"), egui::Button::new("⇅ Escalar…"))
+                        .clicked()
+                {
+                    *accion = confirmar(Verbo::Escalar(-1));
+                }
+                if ui
+                    .add_enabled(
+                        puede("delete"),
+                        egui::Button::new(egui::RichText::new("Borrar").color(theme::BAD)),
+                    )
+                    .clicked()
+                {
+                    *accion = confirmar(Verbo::Borrar);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(egui::Button::new("× limpiar").frame(false))
+                        .on_hover_text("Quitar la selección (Esc también)")
+                        .clicked()
+                    {
+                        seleccion.clear();
+                    }
+                    ui.colored_label(
+                        theme::TEXTO_TENUE,
+                        "espacio marca la fila · ctrl+clic también · casilla de arriba: todo",
+                    );
+                });
+            });
+        });
 }

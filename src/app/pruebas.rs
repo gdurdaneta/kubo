@@ -55,8 +55,26 @@ impl App {
             }
         }
 
-        // KUBO_TEST_CONFIRM=[escalar:]Kind:ns:nombre — abre el modal de
-        // confirmación (borrado, o escalado con el prefijo) sin ejecutarlo.
+        // KUBO_TEST_SEL=ns/a,ns/b — marca filas para probar el lote. Espera a
+        // la vista que las tenga (el IRA de arriba puede cambiar de namespace).
+        if let Ok(claves) = std::env::var("KUBO_TEST_SEL") {
+            if !claves.is_empty() {
+                let claves: Vec<String> = claves.split(',').map(|s| s.trim().to_string()).collect();
+                if let Some(p) = self.pane(pane_id) {
+                    let todas = p
+                        .store
+                        .as_ref()
+                        .is_some_and(|s| claves.iter().all(|k| s.objeto(k).is_some()));
+                    if todas {
+                        std::env::set_var("KUBO_TEST_SEL", "");
+                        p.seleccion.extend(claves);
+                    }
+                }
+            }
+        }
+
+        // KUBO_TEST_CONFIRM=[escalar:|aplicar:]Kind:ns:nombre[,nombre…] — abre
+        // el modal de confirmación sin ejecutarlo; con varios nombres, en lote.
         if let Ok(spec) = std::env::var("KUBO_TEST_CONFIRM") {
             if !spec.is_empty() {
                 std::env::set_var("KUBO_TEST_CONFIRM", "");
@@ -74,15 +92,19 @@ impl App {
                     )
                 });
                 let partes: Vec<&str> = spec.split(':').collect();
-                if let [kind, ns, nombre] = partes[..] {
+                if let [kind, ns, nombres] = partes[..] {
+                    let ns = (!ns.is_empty()).then(|| ns.to_string());
+                    let mut nombres = nombres.split(',');
+                    let nombre = nombres.next().unwrap_or_default();
                     self.confirm = Some(Confirmacion {
                         pane: pane_id,
                         verbo,
                         kind: kind.to_string(),
-                        ns: (!ns.is_empty()).then(|| ns.to_string()),
+                        ns: ns.clone(),
                         name: nombre.to_string(),
                         diff,
                         tecleado: String::new(),
+                        extra: nombres.map(|n| (ns.clone(), n.to_string())).collect(),
                     });
                 }
             }

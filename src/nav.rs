@@ -467,7 +467,7 @@ pub fn build(resources: &[Discovered]) -> Vec<NavCategory> {
 ///
 /// Respeta los acrónimos, que abundan en los CRDs de red: "HTTPRoute" tiene
 /// que quedar "HTTP Routes", no "H T T P Routes".
-fn plural_legible(kind: &str) -> String {
+pub fn plural_legible(kind: &str) -> String {
     let cs: Vec<char> = kind.chars().collect();
     let mut palabras = String::new();
     for (i, c) in cs.iter().enumerate() {

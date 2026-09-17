@@ -23,6 +23,9 @@ pub enum Tone {
 pub struct Cell {
     pub text: String,
     pub tone: Tone,
+    /// Si está, la celda se pinta como una fila de cuadritos (uno por
+    /// contenedor, con su color) en vez de texto; `text` queda para ordenar.
+    pub cuadros: Option<Vec<Tone>>,
 }
 
 impl Cell {
@@ -30,18 +33,21 @@ impl Cell {
         Self {
             text: text.into(),
             tone: Tone::Normal,
+            cuadros: None,
         }
     }
     fn dim(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             tone: Tone::Dim,
+            cuadros: None,
         }
     }
     fn toned(text: impl Into<String>, tone: Tone) -> Self {
         Self {
             text: text.into(),
             tone,
+            cuadros: None,
         }
     }
 }
@@ -66,9 +72,12 @@ const fn col(title: &'static str, width: f32) -> ColSpec {
 // match no se promueve a `'static` porque `col()` es una llamada a función.
 const C_POD: &[ColSpec] = &[
     col("Ready", 60.0),
+    col("Contenedores", 90.0),
     col("Estado", 130.0),
     col("Restarts", 70.0),
-    col("Node", 180.0),
+    col("Controlado por", 110.0),
+    col("Node", 150.0),
+    col("QoS", 80.0),
     col("IP", 120.0),
 ];
 const C_DEPLOY: &[ColSpec] = &[
@@ -1100,6 +1109,44 @@ fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -
 
     let (estado, tono) = estado_pod(o, status, cs, listos, total);
 
+    // Un cuadro por contenedor, como en Lens: verde listo, rojo esperando o
+    // caído, ámbar corriendo pero no listo, gris sin estado todavía.
+    let cuadros: Vec<Tone> = cs
+        .map(|a| {
+            a.iter()
+                .map(|c| {
+                    let listo = c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let st = c.get("state");
+                    if listo {
+                        Tone::Ok
+                    } else if st.and_then(|s| s.get("waiting")).is_some() {
+                        Tone::Bad
+                    } else if st.and_then(|s| s.get("terminated")).is_some() {
+                        let code = st
+                            .and_then(|s| s.get("terminated"))
+                            .and_then(|t| t.get("exitCode"))
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        if code == 0 {
+                            Tone::Dim
+                        } else {
+                            Tone::Bad
+                        }
+                    } else if st.and_then(|s| s.get("running")).is_some() {
+                        Tone::Warn
+                    } else {
+                        Tone::Dim
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| vec![Tone::Dim; total]);
+    let controlado = o
+        .owner_references()
+        .first()
+        .map(|r| r.kind.clone())
+        .unwrap_or_default();
+
     vec![
         Cell::toned(
             format!("{listos}/{total}"),
@@ -1109,6 +1156,11 @@ fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -
                 Tone::Warn
             },
         ),
+        Cell {
+            text: format!("{listos}/{total}"),
+            tone: Tone::Dim,
+            cuadros: Some(cuadros),
+        },
         Cell::toned(estado, tono),
         Cell::toned(
             restarts.to_string(),
@@ -1120,7 +1172,9 @@ fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -
                 Tone::Dim
             },
         ),
+        Cell::dim(controlado),
         Cell::dim(txt(spec, "nodeName")),
+        Cell::dim(txt(status, "qosClass")),
         Cell::dim(txt(status, "podIP")),
     ]
 }
