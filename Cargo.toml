@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/gdurdaneta/kubo"
 
 [dependencies]
+similar = "2.7"
 eframe = { version = "0.35.0", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "wayland", "x11"] }
 egui = "0.35.0"
 egui_extras = { version = "0.35.0", features = ["serde"] }

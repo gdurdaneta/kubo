@@ -45,8 +45,8 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
         .and_then(|p| p.contexto.clone());
 
     let modal = egui::Modal::new(egui::Id::new("confirmacion")).show(ctx, |ui| {
-        ui.set_width(360.0);
         let c = app.confirm.as_mut().unwrap();
+        ui.set_width(if c.diff.is_some() { 640.0 } else { 360.0 });
         let destino = match &c.ns {
             Some(ns) => format!("{} «{}» en {ns}", c.kind, c.name),
             None => format!("{} «{}»", c.kind, c.name),
@@ -166,7 +166,32 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                     theme::WARN,
                     "Los cambios se enviarán directamente al API server.",
                 );
+                if let Some(d) = c.diff.as_deref() {
+                    ui.add_space(6.0);
+                    dibujar_diff(ui, d);
+                }
             }
+        }
+
+        // En producción, borrar, aplicar o dejar sin pods exige teclear el
+        // nombre: el clic reflejo no alcanza.
+        let prod = contexto.as_deref().is_some_and(parece_produccion)
+            || std::env::var("KUBO_TEST_PROD").is_ok_and(|v| !v.is_empty());
+        let tecleo = prod && requiere_tecleo(&c.verbo);
+        let mut habilitado = true;
+        if tecleo {
+            ui.add_space(10.0);
+            ui.colored_label(
+                theme::BAD,
+                format!("Producción: escribí «{}» para confirmar", c.name),
+            );
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut c.tecleado)
+                    .hint_text(&c.name)
+                    .desired_width(f32::INFINITY),
+            );
+            resp.request_focus();
+            habilitado = c.tecleado.trim() == c.name;
         }
 
         ui.add_space(12.0);
@@ -178,7 +203,11 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                 Verbo::AplicarYaml(_) => ("Aplicar", theme::WARN),
             };
             if ui
-                .button(egui::RichText::new(texto).color(color).strong())
+                .add_enabled(
+                    habilitado,
+                    egui::Button::new(egui::RichText::new(texto).color(color).strong()),
+                )
+                .on_disabled_hover_text("Escribí el nombre exacto del recurso")
                 .clicked()
             {
                 ejecutar = true;
@@ -197,6 +226,61 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
     }
 }
 
+/// Qué verbos piden teclear el nombre en producción: los que destruyen o
+/// reemplazan. Reiniciar y escalar a más de cero son reversibles al toque.
+fn requiere_tecleo(v: &Verbo) -> bool {
+    match v {
+        Verbo::Borrar | Verbo::AplicarYaml(_) => true,
+        Verbo::Escalar(n) => *n == 0,
+        Verbo::Reiniciar => false,
+    }
+}
+
+/// Diff unificado con colores, en monoespaciada y con scroll propio.
+fn dibujar_diff(ui: &mut egui::Ui, diff: &str) {
+    let (mas, menos) = diff.lines().fold((0, 0), |(m, n), l| {
+        if l.starts_with('+') && !l.starts_with("+++") {
+            (m + 1, n)
+        } else if l.starts_with('-') && !l.starts_with("---") {
+            (m, n + 1)
+        } else {
+            (m, n)
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.colored_label(theme::TEXTO_TENUE, "cambios:");
+        ui.colored_label(theme::OK, format!("+{mas}"));
+        ui.colored_label(theme::BAD, format!("−{menos}"));
+    });
+    egui::Frame::new()
+        .fill(theme::EXTREMO)
+        .stroke(egui::Stroke::new(1.0, theme::BORDE))
+        .inner_margin(6)
+        .show(ui, |ui| {
+            egui::ScrollArea::both()
+                .max_height(320.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for l in diff.lines() {
+                        let color = if l.starts_with("+++") || l.starts_with("---") {
+                            theme::TEXTO_TENUE
+                        } else if l.starts_with('+') {
+                            theme::OK
+                        } else if l.starts_with('-') {
+                            theme::BAD
+                        } else if l.starts_with("@@") {
+                            theme::ACENTO
+                        } else {
+                            theme::TEXTO
+                        };
+                        ui.label(egui::RichText::new(l).monospace().size(11.5).color(color));
+                    }
+                });
+        });
+}
+
 /// Heurística sobre el nombre del contexto para marcar los que parecen
 /// producción. Falsos positivos son baratos —solo pinta el aviso de rojo—;
 /// un falso negativo solo deja el diálogo como estaba.
@@ -211,7 +295,17 @@ fn parece_produccion(ctx: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::parece_produccion;
+    use super::{parece_produccion, requiere_tecleo};
+    use crate::app::Verbo;
+
+    #[test]
+    fn teclear_solo_en_lo_destructivo() {
+        assert!(requiere_tecleo(&Verbo::Borrar));
+        assert!(requiere_tecleo(&Verbo::AplicarYaml(String::new())));
+        assert!(requiere_tecleo(&Verbo::Escalar(0)));
+        assert!(!requiere_tecleo(&Verbo::Escalar(3)));
+        assert!(!requiere_tecleo(&Verbo::Reiniciar));
+    }
 
     #[test]
     fn marca_los_contextos_de_produccion() {

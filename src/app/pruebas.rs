@@ -62,8 +62,17 @@ impl App {
                 std::env::set_var("KUBO_TEST_CONFIRM", "");
                 let (verbo, spec) = match spec.strip_prefix("escalar:") {
                     Some(resto) => (Verbo::Escalar(-1), resto.to_string()),
-                    None => (Verbo::Borrar, spec.clone()),
+                    None => match spec.strip_prefix("aplicar:") {
+                        Some(resto) => (Verbo::AplicarYaml(String::new()), resto.to_string()),
+                        None => (Verbo::Borrar, spec.clone()),
+                    },
                 };
+                let diff = matches!(verbo, Verbo::AplicarYaml(_)).then(|| {
+                    super::acciones::diff_unificado(
+                        "spec:\n  replicas: 1\n  template:\n    spec:\n      containers:\n      - image: app:1.0\n        name: app\n",
+                        "spec:\n  replicas: 3\n  template:\n    spec:\n      containers:\n      - image: app:1.1\n        name: app\n",
+                    )
+                });
                 let partes: Vec<&str> = spec.split(':').collect();
                 if let [kind, ns, nombre] = partes[..] {
                     self.confirm = Some(Confirmacion {
@@ -72,6 +81,8 @@ impl App {
                         kind: kind.to_string(),
                         ns: (!ns.is_empty()).then(|| ns.to_string()),
                         name: nombre.to_string(),
+                        diff,
+                        tecleado: String::new(),
                     });
                 }
             }

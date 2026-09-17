@@ -732,6 +732,8 @@ pub fn menu_acciones(
             kind: kind.to_string(),
             ns: ns.clone(),
             name: nombre.clone(),
+            diff: None,
+            tecleado: String::new(),
         });
         ui.close();
     }
@@ -749,6 +751,8 @@ pub fn menu_acciones(
             kind: kind.to_string(),
             ns: ns.clone(),
             name: nombre.clone(),
+            diff: None,
+            tecleado: String::new(),
         });
         ui.close();
     }
@@ -766,6 +770,8 @@ pub fn menu_acciones(
             kind: kind.to_string(),
             ns,
             name: nombre,
+            diff: None,
+            tecleado: String::new(),
         });
         ui.close();
     }

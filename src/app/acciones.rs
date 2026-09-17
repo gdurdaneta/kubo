@@ -74,15 +74,29 @@ impl App {
 
     pub fn aplicar_yaml(&mut self, pane_id: u64, yaml: String) {
         // El nombre/ns esperados salen del detalle abierto, no del YAML.
-        let Some((name, ns, kind, revelar)) = self
+        let Some((name, ns, kind, revelar, original)) = self
             .panes
             .iter()
             .find(|p| p.id == pane_id)
             .and_then(|p| p.detalle.as_ref())
-            .map(|d| (d.name.clone(), d.ns.clone(), d.kind.clone(), d.revelar))
+            .map(|d| {
+                (
+                    d.name.clone(),
+                    d.ns.clone(),
+                    d.kind.clone(),
+                    d.revelar,
+                    d.yaml.clone().unwrap_or_default(),
+                )
+            })
         else {
             return;
         };
+        // El diff es lo que se confirma: sin cambios no hay nada que aplicar.
+        let diff = diff_unificado(&original, &yaml);
+        if diff.is_empty() {
+            self.toast("el manifiesto no tiene cambios", false);
+            return;
+        }
         // Aplicar un Secret enmascarado escribiría el marcador como valor.
         if kind == "Secret" && !revelar {
             self.toast(
@@ -97,6 +111,34 @@ impl App {
             kind,
             ns,
             name,
+            diff: Some(diff),
+            tecleado: String::new(),
         });
+    }
+}
+
+/// Diff unificado (3 líneas de contexto) entre dos textos; vacío si son iguales.
+pub fn diff_unificado(antes: &str, despues: &str) -> String {
+    if antes == despues {
+        return String::new();
+    }
+    similar::TextDiff::from_lines(antes, despues)
+        .unified_diff()
+        .context_radius(3)
+        .header("api-server", "editado")
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::diff_unificado;
+
+    #[test]
+    fn diff_vacio_si_no_cambia_y_unificado_si_cambia() {
+        assert_eq!(diff_unificado("a: 1\n", "a: 1\n"), "");
+        let d = diff_unificado("a: 1\nb: 2\n", "a: 1\nb: 3\n");
+        assert!(d.contains("-b: 2"), "{d}");
+        assert!(d.contains("+b: 3"), "{d}");
+        assert!(d.starts_with("--- api-server"), "{d}");
     }
 }

@@ -80,6 +80,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     kind: kind.clone(),
                     ns: ns.clone(),
                     name: name.clone(),
+                    diff: None,
+                    tecleado: String::new(),
                 })
             };
 

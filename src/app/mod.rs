@@ -323,6 +323,10 @@ pub struct Confirmacion {
     pub kind: String,
     pub ns: Option<String>,
     pub name: String,
+    /// Diff unificado entre el YAML del API server y el editado (solo aplicar).
+    pub diff: Option<String>,
+    /// Lo que el usuario tecleó para confirmar en producción.
+    pub tecleado: String,
 }
 
 #[derive(PartialEq, Eq)]
