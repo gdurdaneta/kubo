@@ -22,6 +22,8 @@ pub struct ColumnaCrd {
     pub ruta: String,
     /// `string`, `integer`, `number`, `boolean` o `date`.
     pub tipo: String,
+    /// 0 = se muestra siempre; >0 = solo con `-o wide` (acá: solo en el detalle).
+    pub prioridad: i64,
 }
 
 fn ar_crd() -> ApiResource {
@@ -46,7 +48,8 @@ pub fn es_grupo_nativo(grupo: &str) -> bool {
         || grupo == "extensions"
 }
 
-/// Columnas (prioridad 0) de la versión pedida del CRD, o de la almacenada.
+/// Columnas de la versión pedida del CRD, o de la almacenada. Se devuelven
+/// todas: la tabla filtra las de prioridad 0 y el detalle muestra el resto.
 pub fn parsear(crd: &Value, version: &str) -> Vec<ColumnaCrd> {
     let Some(versiones) = crd
         .get("spec")
@@ -70,7 +73,6 @@ pub fn parsear(crd: &Value, version: &str) -> Vec<ColumnaCrd> {
         return Vec::new();
     };
     cols.iter()
-        .filter(|c| c.get("priority").and_then(|p| p.as_i64()).unwrap_or(0) == 0)
         .filter_map(|c| {
             let nombre = c.get("name")?.as_str()?.to_string();
             let ruta = c.get("jsonPath")?.as_str()?.to_string();
@@ -86,6 +88,7 @@ pub fn parsear(crd: &Value, version: &str) -> Vec<ColumnaCrd> {
                     .and_then(|t| t.as_str())
                     .unwrap_or("string")
                     .to_string(),
+                prioridad: c.get("priority").and_then(|p| p.as_i64()).unwrap_or(0),
             })
         })
         .collect()
@@ -304,10 +307,13 @@ mod tests {
                 {"name": "Oculta", "jsonPath": ".y", "type": "string", "priority": 1}]},
         ]}});
         let cols = parsear(&crd, "v1");
-        assert_eq!(cols.len(), 1);
+        assert_eq!(cols.len(), 2);
         assert_eq!(cols[0].nombre, "Sync Status");
+        assert_eq!(cols[0].prioridad, 0);
+        assert_eq!(cols[1].nombre, "Oculta");
+        assert_eq!(cols[1].prioridad, 1);
         // Sin versión conocida cae en la storage.
-        assert_eq!(parsear(&crd, "v9").len(), 1);
+        assert_eq!(parsear(&crd, "v9").len(), 2);
         assert_eq!(parsear(&crd, "v1alpha1")[0].nombre, "Viejo");
     }
 

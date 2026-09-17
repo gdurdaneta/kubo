@@ -95,9 +95,15 @@ pub fn columnas_crd(ui: &mut egui::Ui, cols: &[ColumnaCrd], o: &kube::api::Dynam
     }
     seccion(ui, "Estado", |ui| {
         for c in cols {
-            let v = crate::k8s::printer::celda(c, &o.data);
+            let mut v = crate::k8s::printer::celda(c, &o.data);
             if v.is_empty() {
                 continue;
+            }
+            // Cantidades de memoria (`16144396Ki`) legibles, como en Nodes.
+            if v.ends_with("Ki") || v.ends_with("Mi") || v.ends_with("Gi") || v.ends_with("Ti") {
+                if let Some(b) = parse_mem(&v) {
+                    v = fmt_mem(b);
+                }
             }
             campo_tono(ui, &c.nombre, &v, theme::color_tono(columns::tono_de(&v)));
         }

@@ -225,7 +225,7 @@ pub fn headers(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Vec<ColSpec>
     // Un recurso custom sin columnas propias usa las que declara su CRD,
     // igual que `kubectl get`.
     if fijas.is_empty() {
-        v.extend(crd.iter().map(|c| ColSpec {
+        v.extend(crd.iter().filter(|c| c.prioridad == 0).map(|c| ColSpec {
             title: Cow::Owned(c.nombre.clone()),
             width: Some(match c.tipo.as_str() {
                 "integer" | "number" | "boolean" => 80.0,
@@ -262,6 +262,7 @@ pub fn titulo_estado(kind: &str, crd: &[ColumnaCrd]) -> Option<String> {
     if fijas.is_empty() {
         return crd
             .iter()
+            .filter(|c| c.prioridad == 0)
             .find(|c| es_titulo_estado(&c.nombre))
             .map(|c| c.nombre.clone());
     }
@@ -299,6 +300,7 @@ pub fn indice_estado(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Option
     if fijas.is_empty() {
         return crd
             .iter()
+            .filter(|c| c.prioridad == 0)
             .position(|c| es_titulo_estado(&c.nombre))
             .map(|p| p + i);
     }
@@ -321,7 +323,7 @@ pub fn row(kind: &str, o: &DynamicObject, mostrar_ns: bool, crd: &[ColumnaCrd]) 
         v.push(Cell::dim(o.namespace().unwrap_or_default()));
     }
     if extra_cols(kind).is_empty() {
-        v.extend(crd.iter().map(|c| {
+        v.extend(crd.iter().filter(|c| c.prioridad == 0).map(|c| {
             let valor = printer::celda(c, &o.data);
             let tono = tono_de(&valor);
             Cell::toned(valor, tono)
