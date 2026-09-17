@@ -131,6 +131,25 @@ fn ruta_temporal() -> Result<PathBuf> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("XDG_RUNTIME_DIR no está definido"))?;
+    // Si el directorio no es privado, otro usuario podría cambiar el archivo
+    // entre que se escribe y que pkexec lo copia: mejor no seguir.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let md = std::fs::metadata(&dir)
+            .with_context(|| format!("no se pudo leer {}", dir.display()))?;
+        let modo = md.mode() & 0o777;
+        if modo & 0o077 != 0 {
+            return Err(anyhow!(
+                "{} tiene permisos {modo:o}; tiene que ser 0700 para escribir el /etc/hosts temporal ahí",
+                dir.display()
+            ));
+        }
+        // SAFETY: getuid no tiene precondiciones.
+        if md.uid() != unsafe { libc::getuid() } {
+            return Err(anyhow!("{} no es de este usuario", dir.display()));
+        }
+    }
     Ok(dir.join(format!("kubo-hosts-{}", std::process::id())))
 }
 

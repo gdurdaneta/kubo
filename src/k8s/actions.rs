@@ -2,19 +2,12 @@
 //! Todas reportan por toast; la tabla se actualiza sola vía el watch.
 
 use k8s_openapi::jiff::Timestamp;
-use kube::api::{Api, DeleteParams, DynamicObject, Patch, PatchParams, PostParams};
+use kube::api::{DeleteParams, DynamicObject, Patch, PatchParams, PostParams};
 use kube::discovery::ApiResource;
 use kube::Client;
 use serde_json::json;
 
 use super::UiBridge;
-
-fn api_for(client: Client, ar: &ApiResource, ns: Option<&str>) -> Api<DynamicObject> {
-    match ns {
-        Some(ns) => Api::namespaced_with(client, ns, ar),
-        None => Api::all_with(client, ar),
-    }
-}
 
 pub async fn borrar(
     client: Client,
@@ -24,7 +17,7 @@ pub async fn borrar(
     contexto: String,
     bridge: UiBridge,
 ) {
-    let api = api_for(client, &ar, ns.as_deref());
+    let api = super::api_for(client, &ar, ns.as_deref());
     let r = api.delete(&name, &DeleteParams::default()).await;
     let resultado = match &r {
         Ok(_) => {
@@ -36,7 +29,9 @@ pub async fn borrar(
             Err(e.to_string())
         }
     };
-    crate::auditoria::anotar(&contexto, "borrar", &ar.kind, &ns, &name, None, resultado);
+    if !crate::auditoria::anotar(&contexto, "borrar", &ar.kind, &ns, &name, None, resultado) {
+        bridge.toast("no se pudo escribir la auditoría local", true);
+    }
 }
 
 pub async fn escalar(
@@ -48,7 +43,7 @@ pub async fn escalar(
     contexto: String,
     bridge: UiBridge,
 ) {
-    let api = api_for(client, &ar, ns.as_deref());
+    let api = super::api_for(client, &ar, ns.as_deref());
     let patch = json!({ "spec": { "replicas": replicas } });
     let r = api
         .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
@@ -63,7 +58,7 @@ pub async fn escalar(
             Err(e.to_string())
         }
     };
-    crate::auditoria::anotar(
+    if !crate::auditoria::anotar(
         &contexto,
         "escalar",
         &ar.kind,
@@ -71,7 +66,9 @@ pub async fn escalar(
         &name,
         Some(format!("{replicas} réplicas")),
         resultado,
-    );
+    ) {
+        bridge.toast("no se pudo escribir la auditoría local", true);
+    }
 }
 
 /// Rollout restart: la misma anotación que pone `kubectl rollout restart`.
@@ -83,7 +80,7 @@ pub async fn reiniciar(
     contexto: String,
     bridge: UiBridge,
 ) {
-    let api = api_for(client, &ar, ns.as_deref());
+    let api = super::api_for(client, &ar, ns.as_deref());
     let ahora = Timestamp::now().to_string();
     let patch = json!({
         "spec": { "template": { "metadata": { "annotations": {
@@ -103,7 +100,7 @@ pub async fn reiniciar(
             Err(e.to_string())
         }
     };
-    crate::auditoria::anotar(
+    if !crate::auditoria::anotar(
         &contexto,
         "reiniciar",
         &ar.kind,
@@ -111,7 +108,9 @@ pub async fn reiniciar(
         &name,
         None,
         resultado,
-    );
+    ) {
+        bridge.toast("no se pudo escribir la auditoría local", true);
+    }
 }
 
 /// Reemplaza el objeto con el YAML editado (PUT, optimista por resourceVersion).
@@ -128,45 +127,15 @@ pub async fn aplicar_yaml(
     contexto: String,
     bridge: UiBridge,
 ) {
-    let obj: DynamicObject = match serde_yaml_ng::from_str(&yaml) {
+    let obj = match validar_manifiesto(&yaml, &esperado_name, esperado_ns.as_deref()) {
         Ok(o) => o,
         Err(e) => {
-            bridge.toast(format!("YAML inválido: {e}"), true);
+            bridge.toast(e, true);
             return;
         }
     };
-    let Some(name) = obj.metadata.name.clone() else {
-        bridge.toast("el YAML no tiene metadata.name", true);
-        return;
-    };
-    if name != esperado_name {
-        bridge.toast(
-            format!("no se puede cambiar el nombre («{esperado_name}» → «{name}»): los recursos de Kubernetes no se renombran"),
-            true,
-        );
-        return;
-    }
-    if obj.metadata.namespace != esperado_ns {
-        bridge.toast("no se puede cambiar el namespace del objeto", true);
-        return;
-    }
-    // Sin resourceVersion el PUT no es optimista: pisa lo que haya en el
-    // cluster aunque otro lo haya cambiado mientras tanto. Es fácil borrarla
-    // sin querer al limpiar el manifiesto, así que se exige.
-    if obj
-        .metadata
-        .resource_version
-        .as_deref()
-        .is_none_or(str::is_empty)
-    {
-        bridge.toast(
-            "falta metadata.resourceVersion: sin eso el cambio pisaría lo que \
-             haya en el cluster. Recargá y volvé a editar.",
-            true,
-        );
-        return;
-    }
-    let api = api_for(client, &ar, esperado_ns.as_deref());
+    let name = esperado_name.clone();
+    let api = super::api_for(client, &ar, esperado_ns.as_deref());
     let r = api.replace(&name, &PostParams::default(), &obj).await;
     let resultado = match &r {
         Ok(_) => {
@@ -192,7 +161,7 @@ pub async fn aplicar_yaml(
         yaml.hash(&mut h);
         h.finish()
     };
-    crate::auditoria::anotar(
+    if !crate::auditoria::anotar(
         &contexto,
         "aplicar",
         &ar.kind,
@@ -200,5 +169,85 @@ pub async fn aplicar_yaml(
         &name,
         Some(format!("{} líneas, hash {hash:016x}", yaml.lines().count())),
         resultado,
-    );
+    ) {
+        bridge.toast("no se pudo escribir la auditoría local", true);
+    }
+}
+
+/// Lo que se exige de un manifiesto editado antes de mandarlo con PUT: que
+/// parsee, que no cambie nombre ni namespace (Kubernetes no renombra) y que
+/// traiga `resourceVersion` (sin eso el PUT pisa cambios ajenos).
+pub fn validar_manifiesto(
+    yaml: &str,
+    esperado_name: &str,
+    esperado_ns: Option<&str>,
+) -> Result<DynamicObject, String> {
+    let obj: DynamicObject =
+        serde_yaml_ng::from_str(yaml).map_err(|e| format!("YAML inválido: {e}"))?;
+    let name = obj
+        .metadata
+        .name
+        .clone()
+        .ok_or_else(|| "el YAML no tiene metadata.name".to_string())?;
+    if name != esperado_name {
+        return Err(format!(
+            "no se puede cambiar el nombre («{esperado_name}» → «{name}»): los recursos de Kubernetes no se renombran"
+        ));
+    }
+    if obj.metadata.namespace.as_deref() != esperado_ns {
+        return Err("no se puede cambiar el namespace del objeto".to_string());
+    }
+    if obj
+        .metadata
+        .resource_version
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
+        return Err(
+            "falta metadata.resourceVersion: sin eso el cambio pisaría lo que \
+                    haya en el cluster. Recargá y volvé a editar."
+                .to_string(),
+        );
+    }
+    Ok(obj)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validar_manifiesto;
+
+    const OK: &str = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cfg\n  namespace: ns\n  resourceVersion: \"12\"\ndata:\n  a: b\n";
+
+    #[test]
+    fn acepta_un_manifiesto_coherente() {
+        let o = validar_manifiesto(OK, "cfg", Some("ns")).unwrap();
+        assert_eq!(o.metadata.resource_version.as_deref(), Some("12"));
+    }
+
+    #[test]
+    fn rechaza_rename_namespace_y_sin_resource_version() {
+        assert!(validar_manifiesto(OK, "otro", Some("ns"))
+            .unwrap_err()
+            .contains("renombran"));
+        assert!(validar_manifiesto(OK, "cfg", Some("otro"))
+            .unwrap_err()
+            .contains("namespace"));
+        let sin_rv = OK.replace("  resourceVersion: \"12\"\n", "");
+        assert!(validar_manifiesto(&sin_rv, "cfg", Some("ns"))
+            .unwrap_err()
+            .contains("resourceVersion"));
+        assert!(validar_manifiesto("a: [", "cfg", Some("ns"))
+            .unwrap_err()
+            .contains("YAML inválido"));
+        assert!(validar_manifiesto("apiVersion: v1\nkind: X\n", "cfg", None)
+            .unwrap_err()
+            .contains("metadata.name"));
+    }
+
+    #[test]
+    fn cluster_scoped_sin_namespace() {
+        let y = "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: n\n  resourceVersion: \"1\"\n";
+        assert!(validar_manifiesto(y, "n", None).is_ok());
+        assert!(validar_manifiesto(y, "n", Some("ns")).is_err());
+    }
 }

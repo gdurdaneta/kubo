@@ -119,6 +119,24 @@ impl App {
             self.toast("ya hay un forward escuchando en esa dirección", true);
             return;
         }
+        // La IP del alias sale de un hash del nombre: dos nombres distintos
+        // podrían caer en la misma y pisarse en /etc/hosts.
+        if d.alias {
+            if let Some(otro) = self.forwards.iter().find(|f| {
+                f.alias
+                    && f.servicio != d.servicio
+                    && f.bind == k8s::portforward::bind_de(true, &d.servicio)
+            }) {
+                self.toast(
+                    format!(
+                        "el alias de «{}» caería en la misma IP que «{}»; abrilo sin alias",
+                        d.servicio, otro.servicio
+                    ),
+                    true,
+                );
+                return;
+            }
+        }
 
         let id = self.token();
         let bind = k8s::portforward::bind_de(d.alias, &d.servicio);
@@ -144,7 +162,7 @@ impl App {
             p.vista_local = Some(VistaLocal::PortForwards);
         }
         // Un túnel expone un servicio del cluster en esta máquina: se audita.
-        crate::auditoria::anotar(
+        if !crate::auditoria::anotar(
             &d.contexto,
             "port-forward",
             if d.pod { "Pod" } else { "Service" },
@@ -161,7 +179,9 @@ impl App {
                 }
             )),
             Ok(()),
-        );
+        ) {
+            self.toast("no se pudo escribir la auditoría local", true);
+        }
 
         // El alias va primero: si el usuario cancela el diálogo de polkit, no
         // tiene sentido dejar el listener arriba con un nombre que no resuelve.

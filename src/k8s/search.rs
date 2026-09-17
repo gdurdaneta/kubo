@@ -34,6 +34,24 @@ pub const KINDS_BUSCABLES: &[&str] = &[
     "Job",
     "PersistentVolumeClaim",
     "Node",
+    "Namespace",
+    "HorizontalPodAutoscaler",
+    "ServiceAccount",
+    // CRDs habituales: solo se consultan si el cluster los sirve.
+    "Application",
+    "ApplicationSet",
+    "Rollout",
+    "Certificate",
+    "HelmRelease",
+    "Kustomization",
+    "ExternalSecret",
+    "NodePool",
+    "ServiceMonitor",
+    "VirtualService",
+    "Gateway",
+    "HTTPRoute",
+    "Workflow",
+    "CronWorkflow",
 ];
 
 const TAM_PAGINA: u32 = 300;

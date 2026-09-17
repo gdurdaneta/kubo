@@ -42,58 +42,68 @@ pub async fn run(
     let cfg = watcher::Config::default().page_size(TAM_PAGINA);
     tracing::info!(kind = %ar.kind, ?target, token, "watch: arrancando");
     let t0 = std::time::Instant::now();
-    let mut stream = watcher::watcher(api, cfg).boxed();
     let mut vistos = 0usize;
     let mut lote: Vec<DynamicObject> = Vec::with_capacity(TAM_LOTE);
-
     let mut backoff_notified = false;
-    while let Some(item) = stream.next().await {
-        let msg = match item {
-            Ok(Event::Init) => {
-                lote.clear();
-                WatchMsg::Init
-            }
-            Ok(Event::InitApply(o)) => {
-                vistos += 1;
-                lote.push(o);
-                if lote.len() < TAM_LOTE {
-                    continue;
+    // Si el stream termina (VPN que se cae, API server que cierra la conexión)
+    // se vuelve a abrir solo, con espera creciente: la vista se resincroniza
+    // con el Init/InitDone del watcher nuevo, sin que el usuario refresque.
+    let mut intento: u32 = 0;
+    loop {
+        let mut stream = watcher::watcher(api.clone(), cfg.clone()).boxed();
+        while let Some(item) = stream.next().await {
+            let msg = match item {
+                Ok(Event::Init) => {
+                    lote.clear();
+                    WatchMsg::Init
                 }
-                WatchMsg::InitBatch(std::mem::replace(&mut lote, Vec::with_capacity(TAM_LOTE)))
-            }
-            Ok(Event::InitDone) => {
-                backoff_notified = false;
-                if !lote.is_empty() {
-                    bridge.send(K8sEvent::Watch {
-                        token,
-                        msg: WatchMsg::InitBatch(std::mem::take(&mut lote)),
-                    });
+                Ok(Event::InitApply(o)) => {
+                    vistos += 1;
+                    lote.push(o);
+                    if lote.len() < TAM_LOTE {
+                        continue;
+                    }
+                    WatchMsg::InitBatch(std::mem::replace(&mut lote, Vec::with_capacity(TAM_LOTE)))
                 }
-                tracing::info!(
-                    kind = %ar.kind, vistos, ms = t0.elapsed().as_millis(),
-                    "watch: listado inicial completo"
-                );
-                WatchMsg::InitDone
-            }
-            Ok(Event::Apply(o)) => WatchMsg::Apply(Box::new(o)),
-            Ok(Event::Delete(o)) => WatchMsg::Delete(Box::new(o)),
-            Err(e) => {
-                // El watcher reintenta solo; no inundamos la UI con el mismo error.
-                if backoff_notified {
-                    continue;
+                Ok(Event::InitDone) => {
+                    backoff_notified = false;
+                    intento = 0;
+                    if !lote.is_empty() {
+                        bridge.send(K8sEvent::Watch {
+                            token,
+                            msg: WatchMsg::InitBatch(std::mem::take(&mut lote)),
+                        });
+                    }
+                    tracing::info!(
+                        kind = %ar.kind, vistos, ms = t0.elapsed().as_millis(),
+                        "watch: listado inicial completo"
+                    );
+                    WatchMsg::InitDone
                 }
-                backoff_notified = true;
-                tracing::warn!(kind = %ar.kind, error = %e, "watch: error");
-                WatchMsg::Error(e.to_string())
-            }
-        };
-        bridge.send(K8sEvent::Watch { token, msg });
+                Ok(Event::Apply(o)) => WatchMsg::Apply(Box::new(o)),
+                Ok(Event::Delete(o)) => WatchMsg::Delete(Box::new(o)),
+                Err(e) => {
+                    // El watcher reintenta solo; no inundamos la UI con el mismo error.
+                    if backoff_notified {
+                        continue;
+                    }
+                    backoff_notified = true;
+                    tracing::warn!(kind = %ar.kind, error = %e, "watch: error");
+                    WatchMsg::Error(e.to_string())
+                }
+            };
+            bridge.send(K8sEvent::Watch { token, msg });
+        }
+        intento += 1;
+        let espera = std::time::Duration::from_secs((2u64.pow(intento.min(5))).min(30));
+        tracing::warn!(kind = %ar.kind, ?target, token, intento, ?espera, "watch: stream terminado, reconectando");
+        bridge.send(K8sEvent::Watch {
+            token,
+            msg: WatchMsg::Error(format!(
+                "se cortó el seguimiento; reconectando en {} s",
+                espera.as_secs()
+            )),
+        });
+        tokio::time::sleep(espera).await;
     }
-    tracing::warn!(kind = %ar.kind, ?target, token, "watch: stream terminado");
-    bridge.send(K8sEvent::Watch {
-        token,
-        msg: WatchMsg::Error(
-            "el seguimiento terminó; refrescá la vista para reconectar".to_string(),
-        ),
-    });
 }

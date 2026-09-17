@@ -39,18 +39,18 @@ pub fn ruta() -> Option<PathBuf> {
 /// Agrega una línea. Los errores no se propagan: no poder auditar no es razón
 /// para cancelar una acción que el usuario ya confirmó, pero sí queda en el
 /// log de la app.
-pub fn registrar(e: &Entrada) {
-    let Some(p) = ruta() else { return };
-    registrar_en(&p, e);
+pub fn registrar(e: &Entrada) -> bool {
+    let Some(p) = ruta() else { return false };
+    registrar_en(&p, e)
 }
 
 /// Igual que `registrar` pero contra una ruta concreta. Separado para poder
 /// probarlo sin depender de variables de entorno, que son globales al proceso
 /// y hacen que los tests se pisen entre sí.
-fn registrar_en(p: &std::path::Path, e: &Entrada) {
+fn registrar_en(p: &std::path::Path, e: &Entrada) -> bool {
     if let Some(dir) = p.parent() {
         if std::fs::create_dir_all(dir).is_err() {
-            return;
+            return false;
         }
         #[cfg(unix)]
         {
@@ -59,7 +59,7 @@ fn registrar_en(p: &std::path::Path, e: &Entrada) {
         }
     }
     let Ok(mut linea) = serde_json::to_string(e) else {
-        return;
+        return false;
     };
     linea.push('\n');
 
@@ -71,15 +71,23 @@ fn registrar_en(p: &std::path::Path, e: &Entrada) {
         opts.mode(0o600);
     }
     match opts.open(p).and_then(|mut f| f.write_all(linea.as_bytes())) {
-        Ok(()) => tracing::info!(
-            verbo = %e.verbo, kind = %e.kind, name = %e.name, ok = e.ok,
-            "auditoría: registrada"
-        ),
-        Err(err) => tracing::warn!(error = %err, "auditoría: no se pudo escribir"),
+        Ok(()) => {
+            tracing::info!(
+                verbo = %e.verbo, kind = %e.kind, name = %e.name, ok = e.ok,
+                "auditoría: registrada"
+            );
+            true
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "auditoría: no se pudo escribir");
+            false
+        }
     }
 }
 
-/// Ayuda para armar la entrada desde el resultado de una acción.
+/// Ayuda para armar la entrada desde el resultado de una acción. Devuelve
+/// `false` si no se pudo escribir: la acción ya pasó, pero conviene avisar.
+#[must_use]
 pub fn anotar(
     contexto: &str,
     verbo: &str,
@@ -88,7 +96,7 @@ pub fn anotar(
     name: &str,
     detalle: Option<String>,
     resultado: Result<(), String>,
-) {
+) -> bool {
     registrar(&Entrada {
         ts: k8s_openapi::jiff::Timestamp::now().to_string(),
         contexto: contexto.to_string(),

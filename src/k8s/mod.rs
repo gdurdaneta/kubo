@@ -47,6 +47,18 @@ where
     }
 }
 
+/// API tipada dinámicamente para un recurso, con o sin namespace.
+pub fn api_for(
+    client: kube::Client,
+    ar: &ApiResource,
+    ns: Option<&str>,
+) -> kube::Api<DynamicObject> {
+    match ns {
+        Some(ns) => kube::Api::namespaced_with(client, ns, ar),
+        None => kube::Api::all_with(client, ar),
+    }
+}
+
 /// Un recurso servido por el cluster, tal como lo reporta discovery.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Discovered {

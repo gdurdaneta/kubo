@@ -32,9 +32,30 @@ Rust + [egui](https://github.com/emilk/egui) sobre wgpu (Vulkan) y
 - **Shell dentro del pod**: exec con PTY sobre WebSocket y emulador de
   terminal embebido (vt100) — colores, cursor, resize, Ctrl+C.
 - **Acciones**: editar el YAML y aplicarlo, escalar, rollout restart y borrar,
-  siempre con modal de confirmación. Aplicar rechaza cambios de nombre o
-  namespace: en Kubernetes los recursos no se renombran, y aplicar sobre otro
-  nombre sería tocar un objeto distinto del que se está mirando.
+  siempre con modal de confirmación. Aplicar muestra el diff contra la copia
+  del API server y rechaza cambios de nombre o namespace: en Kubernetes los
+  recursos no se renombran. En contextos que parecen producción, borrar,
+  aplicar o escalar a cero exigen teclear el nombre del recurso.
+- **Selección múltiple**: casillas por fila (espacio, ctrl+clic, casilla
+  maestra) y acciones por lote —reiniciar, escalar, borrar— con una sola
+  confirmación que lista los objetivos.
+- **Logs y shell desde el workload**: en un Deployment, StatefulSet o
+  DaemonSet, Logs mezcla todos sus pods (con el nombre adelante de cada
+  línea) y Shell entra a uno Running. Copiar logs enmascara tokens,
+  contraseñas y credenciales en URLs (ctrl+clic copia sin redactar).
+- **Port-forward**: de un Service o de un pod concreto, en loopback. Con
+  alias opcional en `/etc/hosts` (vía pkexec, archivo temporal en
+  `XDG_RUNTIME_DIR` 0700) para consumirlo por nombre.
+- **Recursos custom**: la tabla muestra las `additionalPrinterColumns` del
+  CRD como `kubectl get`; si el CRD no declara ninguna, infiere un Estado
+  (phase, conditions…) y un resumen del spec. El detalle muestra además las
+  columnas de `-o wide`.
+- **Auditoría local**: `acciones.jsonl` (0600) con borrar, escalar,
+  reiniciar, aplicar (líneas y hash del manifiesto), shell, logs y
+  port-forward, por cluster y con fecha. Se ve en Cluster → Acciones hechas.
+- **Modo solo lectura**: `kubo --solo-lectura` (o `KUBO_SOLO_LECTURA=1`)
+  quita editar, aplicar, escalar, reiniciar, borrar y shell de toda la UI y
+  los frena aunque algo los pida. Para mirar producción sin miedo.
 - **Mapa de servicio**: Ingress → Service → workloads → pods del selector,
   dibujado en la pestaña "Mapa" del detalle de un Service.
 - **Mapa de configuración del workload**: en Deployments (y StatefulSets,
@@ -53,7 +74,10 @@ Rust + [egui](https://github.com/emilk/egui) sobre wgpu (Vulkan) y
 - **Paleta de comandos** (`Ctrl+K`): busca a la vez entre las vistas del
   sidebar y los recursos del cluster por nombre (Pods, Deployments, Services,
   Ingresses, ConfigMaps, Secrets, StatefulSets, DaemonSets, CronJobs, Jobs,
-  PVCs, Nodes). Debounce de 250 ms, ↑↓ para moverse, ↵ para abrir.
+  PVCs, Nodes, Namespaces, HPAs, ServiceAccounts y los CRDs habituales —Argo
+  Application/Rollout, Certificate, HelmRelease, ExternalSecret, NodePool,
+  ServiceMonitor, VirtualService, Gateway, HTTPRoute, Workflow— si el cluster
+  los sirve). Debounce de 250 ms, ↑↓ para moverse, ↵ para abrir.
 - **Paneles múltiples** (hasta 4): varios clusters a la vez, o varios recursos
   del mismo cluster, lado a lado. Las conexiones se comparten por contexto.
 - **Conexión rápida**: discovery agregado (2 requests) con fallback al
@@ -90,18 +114,29 @@ de dos recursos distintos.
 
 ## Harness de depuración
 
-Variables de entorno para probar sin clickear: `KUBO_TEST_SHELL=ns/pod`
-(abre la shell al cargar; `KUBO_TEST_SHELL_CMD` manda un comando),
-`KUBO_TEST_MAPA=ns/service` (abre el mapa), `KUBO_TEST_WMAPA=ns/deployment`
-(mapa de configuración), `KUBO_TEST_IRA=Kind:ns:name` (navegación, con
-`KUBO_TEST_TAB=Yaml|Eventos|Mapa`), `KUBO_TEST_PALETTE=texto`,
-`KUBO_TEST_PANES=n`.
+Variables de entorno para probar sin clickear (viven en
+`src/app/pruebas.rs`; inertes si no están definidas, y solo actúan sobre la
+sesión propia — no mutan nada por sí solas, salvo `KUBO_TEST_PF`, que levanta
+un túnel local): `KUBO_TEST_SHELL=ns/pod` (abre la shell al cargar;
+`KUBO_TEST_SHELL_CMD` manda un comando), `KUBO_TEST_MAPA=ns/service` (abre el
+mapa), `KUBO_TEST_WMAPA=ns/deployment` (mapa de configuración),
+`KUBO_TEST_IRA=Kind:ns:name` (navegación, con `KUBO_TEST_TAB=Yaml|Eventos|Mapa`),
+`KUBO_TEST_WL=logs|shell:ns/name` (logs o shell de un workload),
+`KUBO_TEST_PF=ns/service-o-pod` (port-forward con valores por defecto),
+`KUBO_TEST_SEL=ns/a,ns/b` (marca filas), `KUBO_TEST_CONFIRM=[escalar:|aplicar:]Kind:ns:nombre[,nombre]`
+(abre el modal sin ejecutar), `KUBO_TEST_PROD=1` (trata el contexto como
+producción), `KUBO_TEST_VISTA=auditoria|forwards`, `KUBO_TEST_PALETTE=texto`,
+`KUBO_TEST_PANES=n`, `KUBO_TEST_NAV=0`, `KUBO_TEST_SIZE=1400x1000`.
+
+Para capturas de pantalla reproducibles sin tocar el escritorio, kubo corre
+igual dentro de un `sway` headless (`WLR_BACKENDS=headless`) y se captura con
+`grim -o HEADLESS-1`.
 
 ## Todavía no
 
-- Métricas de CPU/memoria vía metrics-server.
-- `port-forward`.
-- Drag para reordenar paneles; layouts guardados.
+- Drag para reordenar paneles.
+- Favoritos de recursos concretos (hoy solo de vistas).
+- Tema claro.
 
 ## Instalar en Linux
 

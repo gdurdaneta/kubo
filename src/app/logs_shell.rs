@@ -67,7 +67,7 @@ impl App {
         };
         let nombres: Vec<String> = pods.iter().map(kube::ResourceExt::name_any).collect();
         let contenedores = contenedores_de(primero);
-        crate::auditoria::anotar(
+        if !crate::auditoria::anotar(
             &self.contexto_del_pane(pane_id),
             "logs",
             "Pod",
@@ -75,7 +75,9 @@ impl App {
             &titulo,
             Some(format!("{} pods", nombres.len())),
             Ok(()),
-        );
+        ) {
+            self.toast("no se pudo escribir la auditoría local", true);
+        }
         if let Some(pane) = self.pane(pane_id) {
             pane.cerrar_bottom();
             // El contenedor principal suele llamarse como el workload; si no,
@@ -111,7 +113,7 @@ impl App {
         };
         let pod = kube::ResourceExt::name_any(obj);
         let contenedores = contenedores_de(obj);
-        crate::auditoria::anotar(
+        if !crate::auditoria::anotar(
             &self.contexto_del_pane(pane_id),
             "logs",
             "Pod",
@@ -119,7 +121,9 @@ impl App {
             &pod,
             contenedores.first().cloned(),
             Ok(()),
-        );
+        ) {
+            self.toast("no se pudo escribir la auditoría local", true);
+        }
 
         if let Some(pane) = self.pane(pane_id) {
             pane.cerrar_bottom();
@@ -216,7 +220,7 @@ impl App {
         let contenedor = contenedores_de(obj).first().cloned();
         // Una shell dentro de un pod es lo más sensible que hace kubo: queda
         // en la auditoría aunque no mute nada.
-        crate::auditoria::anotar(
+        if !crate::auditoria::anotar(
             &self.contexto_del_pane(pane_id),
             "shell",
             "Pod",
@@ -224,7 +228,9 @@ impl App {
             &pod,
             contenedor.clone(),
             Ok(()),
-        );
+        ) {
+            self.toast("no se pudo escribir la auditoría local", true);
+        }
 
         let (stdin_tx, stdin_rx) = tokio::sync::mpsc::unbounded_channel();
         let (resize_tx, resize_rx) = tokio::sync::mpsc::unbounded_channel();

@@ -1,18 +1,11 @@
 //! Datos del panel de detalle: YAML fresco del objeto y sus eventos.
 
 use k8s_openapi::jiff::Timestamp;
-use kube::api::{Api, DynamicObject, ListParams};
+use kube::api::{DynamicObject, ListParams};
 use kube::discovery::ApiResource;
 use kube::Client;
 
 use super::{EventRow, K8sEvent, UiBridge};
-
-fn api_for(client: Client, ar: &ApiResource, ns: Option<&str>) -> Api<DynamicObject> {
-    match ns {
-        Some(ns) => Api::namespaced_with(client, ns, ar),
-        None => Api::all_with(client, ar),
-    }
-}
 
 /// Sustituye los valores de `data`/`stringData` por un marcador.
 ///
@@ -54,7 +47,7 @@ pub async fn fetch_yaml(
     token: u64,
     bridge: UiBridge,
 ) {
-    let api = api_for(client, &ar, ns.as_deref());
+    let api = super::api_for(client, &ar, ns.as_deref());
     let t0 = std::time::Instant::now();
     let text = match api.get(&name).await {
         Ok(mut obj) => {
@@ -93,7 +86,7 @@ pub async fn fetch_events(
         kind: "Event".into(),
         plural: "events".into(),
     };
-    let api = api_for(client, &ar, ns.as_deref());
+    let api = super::api_for(client, &ar, ns.as_deref());
     let lp = ListParams::default()
         .fields(&format!("involvedObject.uid={uid}"))
         .limit(200);

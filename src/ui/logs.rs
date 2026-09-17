@@ -12,6 +12,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
         return;
     };
     let mut reiniciar = false;
+    let mut redactados: Option<usize> = None;
 
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(&v.pod).strong());
@@ -57,13 +58,33 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
             if ui.button("×").on_hover_text("Cerrar").clicked() {
                 *accion = Accion::CerrarBottom(id);
             }
-            if ui.button("Copiar").clicked() {
+            // Al portapapeles va redactado: lo que se pega en un ticket o un
+            // chat no tiene por qué llevar tokens. El visor sigue mostrando todo.
+            let resp = ui.button("Copiar").on_hover_text(
+                "Copia las líneas con tokens y contraseñas enmascarados\n(ctrl+clic: sin redactar)",
+            );
+            if resp.clicked() {
                 let todo: Vec<&str> = v.lineas.iter().map(|s| s.as_str()).collect();
-                ui.ctx().copy_text(todo.join("\n"));
+                let texto = todo.join("\n");
+                if ui.input(|i| i.modifiers.command) {
+                    ui.ctx().copy_text(texto);
+                } else {
+                    let (r, n) = crate::redaccion::redactar(&texto);
+                    ui.ctx().copy_text(r);
+                    if n > 0 {
+                        redactados = Some(n);
+                    }
+                }
             }
             ui.colored_label(theme::TEXTO_TENUE, format!("{} líneas", v.lineas.len()));
         });
     });
+    if let Some(n) = redactados {
+        app.bridge.toast(
+            format!("copiado con {n} valores sensibles enmascarados"),
+            false,
+        );
+    }
 
     if let Some(motivo) = &v.cerrado {
         ui.colored_label(theme::WARN, format!("stream terminado: {motivo}"));

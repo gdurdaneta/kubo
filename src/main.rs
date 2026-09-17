@@ -12,6 +12,7 @@ mod hosts;
 mod k8s;
 mod layout;
 mod nav;
+mod redaccion;
 mod rutas;
 mod store;
 mod theme;
