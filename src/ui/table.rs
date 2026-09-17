@@ -992,10 +992,10 @@ fn barra_lote(
 /// algunas filas marcadas). Devuelve si cambió y la respuesta.
 fn casilla(ui: &mut egui::Ui, marcada: &mut bool, parcial: bool) -> (bool, egui::Response) {
     let lado = 13.0;
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(lado + 4.0, ALTO_FILA - 4.0),
-        egui::Sense::click(),
-    );
+    // Ocupa la celda entera para quedar centrada en la columna.
+    let ancho = ui.available_width().max(lado + 4.0);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(ancho, ALTO_FILA - 4.0), egui::Sense::click());
     let caja = egui::Rect::from_center_size(rect.center(), egui::vec2(lado, lado));
     let p = ui.painter();
     let radio = 3.0;
