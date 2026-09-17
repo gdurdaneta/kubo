@@ -1,10 +1,14 @@
 //! Columnas por Kind. Cada Kind decide qué mira del objeto; el fallback
 //! genérico (Nombre / Namespace / Edad) cubre cualquier CRD.
 
+use std::borrow::Cow;
+
 use k8s_openapi::jiff::{SignedDuration, Timestamp};
 use kube::api::DynamicObject;
 use kube::ResourceExt;
 use serde_json::Value;
+
+use crate::k8s::printer::{self, ColumnaCrd};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tone {
@@ -42,16 +46,18 @@ impl Cell {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ColSpec {
-    pub title: &'static str,
+    /// Prestado para las columnas fijas de cada Kind; propio para las que
+    /// vienen del CRD.
+    pub title: Cow<'static, str>,
     /// Ancho inicial; `None` = ocupa el resto.
     pub width: Option<f32>,
 }
 
 const fn col(title: &'static str, width: f32) -> ColSpec {
     ColSpec {
-        title,
+        title: Cow::Borrowed(title),
         width: Some(width),
     }
 }
@@ -125,9 +131,46 @@ const C_EVENT: &[ColSpec] = &[
     col("Razon", 150.0),
     col("Objeto", 200.0),
     ColSpec {
-        title: "Mensaje",
+        title: Cow::Borrowed("Mensaje"),
         width: None,
     },
+];
+const C_HPA: &[ColSpec] = &[
+    col("Objetivo", 180.0),
+    col("Min", 50.0),
+    col("Max", 50.0),
+    col("Actuales", 80.0),
+    col("Uso", 130.0),
+];
+const C_NETPOL: &[ColSpec] = &[col("Selector", 220.0), col("Tipos", 120.0)];
+const C_ROLE: &[ColSpec] = &[col("Reglas", 70.0)];
+const C_ROLEBINDING: &[ColSpec] = &[col("Rol", 200.0), col("Sujetos", 260.0)];
+const C_STORAGECLASS: &[ColSpec] = &[
+    col("Provisioner", 220.0),
+    col("Reclaim", 90.0),
+    col("Binding", 160.0),
+    col("Expansion", 80.0),
+    col("Default", 70.0),
+];
+const C_INGRESSCLASS: &[ColSpec] = &[col("Controller", 240.0), col("Default", 70.0)];
+const C_PDB: &[ColSpec] = &[
+    col("Min disp.", 80.0),
+    col("Max no disp.", 100.0),
+    col("Permitidas", 90.0),
+    col("Sanos", 80.0),
+];
+const C_QUOTA: &[ColSpec] = &[col("Recursos", 80.0), col("Uso", 260.0)];
+const C_LIMITRANGE: &[ColSpec] = &[col("Limites", 80.0), col("Tipos", 160.0)];
+const C_PRIORITYCLASS: &[ColSpec] = &[
+    col("Valor", 100.0),
+    col("Global", 70.0),
+    col("Preemption", 130.0),
+];
+const C_ENDPOINTS: &[ColSpec] = &[col("Direcciones", 90.0), col("Puertos", 160.0)];
+const C_ENDPOINTSLICE: &[ColSpec] = &[
+    col("Tipo", 80.0),
+    col("Endpoints", 90.0),
+    col("Puertos", 160.0),
 ];
 const C_SERVICEACCOUNT: &[ColSpec] = &[col("Secrets", 80.0)];
 const C_CRD: &[ColSpec] = &[
@@ -142,7 +185,19 @@ fn extra_cols(kind: &str) -> &'static [ColSpec] {
         "Pod" => C_POD,
         "Deployment" | "StatefulSet" => C_DEPLOY,
         "DaemonSet" => C_DAEMONSET,
-        "ReplicaSet" => C_REPLICASET,
+        "ReplicaSet" | "ReplicationController" => C_REPLICASET,
+        "HorizontalPodAutoscaler" => C_HPA,
+        "NetworkPolicy" => C_NETPOL,
+        "Role" | "ClusterRole" => C_ROLE,
+        "RoleBinding" | "ClusterRoleBinding" => C_ROLEBINDING,
+        "StorageClass" => C_STORAGECLASS,
+        "IngressClass" => C_INGRESSCLASS,
+        "PodDisruptionBudget" => C_PDB,
+        "ResourceQuota" => C_QUOTA,
+        "LimitRange" => C_LIMITRANGE,
+        "PriorityClass" => C_PRIORITYCLASS,
+        "Endpoints" => C_ENDPOINTS,
+        "EndpointSlice" => C_ENDPOINTSLICE,
         "Job" => C_JOB,
         "CronJob" => C_CRONJOB,
         "Service" => C_SERVICE,
@@ -160,15 +215,25 @@ fn extra_cols(kind: &str) -> &'static [ColSpec] {
 }
 
 /// Cabecera completa de la tabla para un Kind.
-pub fn headers(kind: &str, mostrar_ns: bool) -> Vec<ColSpec> {
-    let mut v = vec![ColSpec {
-        title: "Nombre",
-        width: Some(280.0),
-    }];
+pub fn headers(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Vec<ColSpec> {
+    let mut v = vec![col("Nombre", 280.0)];
     if mostrar_ns {
         v.push(col("Namespace", 160.0));
     }
-    v.extend_from_slice(extra_cols(kind));
+    let fijas = extra_cols(kind);
+    v.extend_from_slice(fijas);
+    // Un recurso custom sin columnas propias usa las que declara su CRD,
+    // igual que `kubectl get`.
+    if fijas.is_empty() {
+        v.extend(crd.iter().map(|c| ColSpec {
+            title: Cow::Owned(c.nombre.clone()),
+            width: Some(match c.tipo.as_str() {
+                "integer" | "number" | "boolean" => 80.0,
+                "date" => 70.0,
+                _ => 130.0,
+            }),
+        }));
+    }
     // Los backends no están en el Service: llegan de un watch aparte y cambian
     // solos, así que la columna se pinta al dibujar igual que la edad.
     if kind == "Service" {
@@ -192,25 +257,54 @@ pub fn tiene_metricas(kind: &str) -> bool {
 ///
 /// Se busca por título en vez de hardcodear posiciones: así sigue andando si
 /// alguien reordena las columnas de un Kind.
-pub fn titulo_estado(kind: &str) -> Option<&'static str> {
-    const TITULOS: &[&str] = &["Estado", "Status", "Fase", "Tipo"];
-    extra_cols(kind)
+pub fn titulo_estado(kind: &str, crd: &[ColumnaCrd]) -> Option<String> {
+    let fijas = extra_cols(kind);
+    if fijas.is_empty() {
+        return crd
+            .iter()
+            .find(|c| es_titulo_estado(&c.nombre))
+            .map(|c| c.nombre.clone());
+    }
+    fijas
         .iter()
-        .find(|c| TITULOS.contains(&c.title))
-        .map(|c| c.title)
+        .find(|c| es_titulo_estado(&c.title))
+        .map(|c| c.title.to_string())
 }
 
-pub fn indice_estado(kind: &str, mostrar_ns: bool) -> Option<usize> {
-    // "Tipo" es el de Events (Normal/Warning): filtrar por Warning es justo lo
-    // que uno hace al triagear.
+/// "Tipo" es el de Events (Normal/Warning): filtrar por Warning es justo lo
+/// que uno hace al triagear. El resto son los nombres que usan los CRD para
+/// su columna de salud (Argo, cert-manager, Flux, Rollouts…).
+fn es_titulo_estado(t: &str) -> bool {
     const TITULOS: &[&str] = &["Estado", "Status", "Fase", "Tipo"];
+    const CRD: &[&str] = &[
+        "status",
+        "ready",
+        "phase",
+        "state",
+        "health",
+        "health status",
+        "sync status",
+        "healthy",
+        "synced",
+    ];
+    TITULOS.contains(&t) || CRD.contains(&t.to_ascii_lowercase().as_str())
+}
+
+pub fn indice_estado(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Option<usize> {
     let mut i = 1; // Nombre
     if mostrar_ns {
         i += 1;
     }
-    extra_cols(kind)
+    let fijas = extra_cols(kind);
+    if fijas.is_empty() {
+        return crd
+            .iter()
+            .position(|c| es_titulo_estado(&c.nombre))
+            .map(|p| p + i);
+    }
+    fijas
         .iter()
-        .position(|c| TITULOS.contains(&c.title))
+        .position(|c| es_titulo_estado(&c.title))
         .map(|p| p + i)
 }
 
@@ -221,13 +315,35 @@ pub fn tiene_endpoints(kind: &str) -> bool {
 
 /// Valores de una fila, en el mismo orden que `headers` pero SIN la columna
 /// de edad: esa se calcula al dibujar, si no quedaría congelada en la caché.
-pub fn row(kind: &str, o: &DynamicObject, mostrar_ns: bool) -> Vec<Cell> {
+pub fn row(kind: &str, o: &DynamicObject, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Vec<Cell> {
     let mut v = vec![Cell::plain(o.name_any())];
     if mostrar_ns {
         v.push(Cell::dim(o.namespace().unwrap_or_default()));
     }
-    v.extend(extra_cells(kind, o));
+    if extra_cols(kind).is_empty() {
+        v.extend(crd.iter().map(|c| {
+            let valor = printer::celda(c, &o.data);
+            let tono = tono_de(&valor);
+            Cell::toned(valor, tono)
+        }));
+    } else {
+        v.extend(extra_cells(kind, o));
+    }
     v
+}
+
+/// Color para un valor de estado que no conocemos de antemano (columnas de
+/// CRD): lo que suena a sano en verde, lo que suena a roto en rojo.
+pub fn tono_de(v: &str) -> Tone {
+    match v.to_ascii_lowercase().as_str() {
+        "" => Tone::Dim,
+        "true" | "ready" | "healthy" | "synced" | "running" | "succeeded" | "active"
+        | "available" | "bound" | "complete" | "completed" | "ok" | "valid" => Tone::Ok,
+        "false" | "degraded" | "error" | "failed" | "outofsync" | "missing" | "invalid"
+        | "unhealthy" | "notready" | "lost" => Tone::Bad,
+        "progressing" | "unknown" | "suspended" | "pending" | "paused" | "warning" => Tone::Warn,
+        _ => Tone::Normal,
+    }
 }
 
 fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
@@ -278,7 +394,7 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                 Cell::plain(num(status, "numberAvailable").unwrap_or(0).to_string()),
             ]
         }
-        "ReplicaSet" => vec![
+        "ReplicaSet" | "ReplicationController" => vec![
             Cell::plain(num(spec, "replicas").unwrap_or(0).to_string()),
             Cell::plain(num(status, "replicas").unwrap_or(0).to_string()),
             Cell::plain(num(status, "readyReplicas").unwrap_or(0).to_string()),
@@ -472,8 +588,285 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                     .unwrap_or_default(),
             ),
         ],
+        "HorizontalPodAutoscaler" => celdas_hpa(spec, status),
+        "NetworkPolicy" => {
+            let sel = selector_corto(spec.and_then(|s| s.get("podSelector")));
+            let tipos = lista_str(spec, "policyTypes");
+            vec![Cell::dim(sel), Cell::plain(tipos)]
+        }
+        "Role" | "ClusterRole" => vec![Cell::plain(
+            d.get("rules")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+                .to_string(),
+        )],
+        "RoleBinding" | "ClusterRoleBinding" => {
+            let r = d.get("roleRef");
+            let rol = format!("{}/{}", txt(r, "kind"), txt(r, "name"));
+            let sujetos: Vec<String> = d
+                .get("subjects")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .map(|x| format!("{}:{}", str_de(x, "kind"), str_de(x, "name")))
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![Cell::plain(rol), Cell::dim(resumir(&sujetos, 3))]
+        }
+        "StorageClass" => {
+            let por_defecto = o
+                .annotations()
+                .get("storageclass.kubernetes.io/is-default-class")
+                .is_some_and(|v| v == "true");
+            vec![
+                Cell::plain(txt(Some(d), "provisioner")),
+                Cell::dim(txt(Some(d), "reclaimPolicy")),
+                Cell::dim(txt(Some(d), "volumeBindingMode")),
+                Cell::dim(si_no(
+                    d.get("allowVolumeExpansion").and_then(|v| v.as_bool()),
+                )),
+                Cell::toned(tilde(por_defecto), Tone::Ok),
+            ]
+        }
+        "IngressClass" => {
+            let por_defecto = o
+                .annotations()
+                .get("ingressclass.kubernetes.io/is-default-class")
+                .is_some_and(|v| v == "true");
+            vec![
+                Cell::plain(txt(spec, "controller")),
+                Cell::toned(tilde(por_defecto), Tone::Ok),
+            ]
+        }
+        "PodDisruptionBudget" => {
+            let permitidas = num(status, "disruptionsAllowed").unwrap_or(0);
+            let sanos = num(status, "currentHealthy").unwrap_or(0);
+            let esperados = num(status, "expectedPods").unwrap_or(0);
+            vec![
+                Cell::plain(cantidad(spec, "minAvailable")),
+                Cell::plain(cantidad(spec, "maxUnavailable")),
+                Cell::toned(
+                    permitidas.to_string(),
+                    if permitidas > 0 { Tone::Ok } else { Tone::Warn },
+                ),
+                Cell::dim(format!("{sanos}/{esperados}")),
+            ]
+        }
+        "ResourceQuota" => {
+            let hard = status
+                .and_then(|s| s.get("hard"))
+                .and_then(|v| v.as_object());
+            let used = status
+                .and_then(|s| s.get("used"))
+                .and_then(|v| v.as_object());
+            let n = hard.map(|m| m.len()).unwrap_or(0);
+            let uso: Vec<String> = hard
+                .map(|m| {
+                    m.iter()
+                        .map(|(k, v)| {
+                            let u = used
+                                .and_then(|u| u.get(k))
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("0");
+                            format!("{k} {u}/{}", v.as_str().unwrap_or(""))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![Cell::plain(n.to_string()), Cell::dim(resumir(&uso, 3))]
+        }
+        "LimitRange" => {
+            let limites = spec
+                .and_then(|s| s.get("limits"))
+                .and_then(|v| v.as_array());
+            let tipos: Vec<String> = limites
+                .map(|a| a.iter().map(|l| str_de(l, "type")).collect())
+                .unwrap_or_default();
+            vec![
+                Cell::plain(limites.map(|a| a.len()).unwrap_or(0).to_string()),
+                Cell::dim(tipos.join(",")),
+            ]
+        }
+        "PriorityClass" => vec![
+            Cell::plain(num(Some(d), "value").unwrap_or(0).to_string()),
+            Cell::toned(
+                tilde(d.get("globalDefault").and_then(|v| v.as_bool()) == Some(true)),
+                Tone::Ok,
+            ),
+            Cell::dim(txt(Some(d), "preemptionPolicy")),
+        ],
+        "Endpoints" => {
+            let subsets = d.get("subsets").and_then(|v| v.as_array());
+            let direcciones: usize = subsets
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.get("addresses").and_then(|v| v.as_array()))
+                        .map(|v| v.len())
+                        .sum()
+                })
+                .unwrap_or(0);
+            let puertos: Vec<String> = subsets
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.get("ports").and_then(|v| v.as_array()))
+                        .flatten()
+                        .map(|p| num(Some(p), "port").unwrap_or(0).to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![
+                Cell::toned(
+                    direcciones.to_string(),
+                    if direcciones > 0 {
+                        Tone::Ok
+                    } else {
+                        Tone::Warn
+                    },
+                ),
+                Cell::dim(puertos.join(",")),
+            ]
+        }
+        "EndpointSlice" => {
+            let n = d
+                .get("endpoints")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let puertos: Vec<String> = d
+                .get("ports")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .map(|p| num(Some(p), "port").unwrap_or(0).to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            vec![
+                Cell::dim(txt(Some(d), "addressType")),
+                Cell::toned(n.to_string(), if n > 0 { Tone::Ok } else { Tone::Warn }),
+                Cell::dim(puertos.join(",")),
+            ]
+        }
         _ => Vec::new(),
     }
+}
+
+fn celdas_hpa(spec: Option<&Value>, status: Option<&Value>) -> Vec<Cell> {
+    let r = spec.and_then(|s| s.get("scaleTargetRef"));
+    let objetivo = format!("{}/{}", txt(r, "kind"), txt(r, "name"));
+    let min = num(spec, "minReplicas").unwrap_or(1);
+    let max = num(spec, "maxReplicas").unwrap_or(0);
+    let actual = num(status, "currentReplicas").unwrap_or(0);
+    // Primera métrica de recurso (cpu/memoria): uso actual contra objetivo,
+    // que es lo que uno mira para saber si el HPA está al tope.
+    let objetivo_pct = spec
+        .and_then(|s| s.get("metrics"))
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.iter().find_map(|m| m.get("resource")))
+        .map(|r| {
+            (
+                str_de(r, "name"),
+                r.get("target")
+                    .and_then(|t| t.get("averageUtilization"))
+                    .and_then(|v| v.as_i64()),
+            )
+        });
+    let actual_pct = status
+        .and_then(|s| s.get("currentMetrics"))
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.iter().find_map(|m| m.get("resource")))
+        .and_then(|r| r.get("current"))
+        .and_then(|c| c.get("averageUtilization"))
+        .and_then(|v| v.as_i64());
+    let uso = match (objetivo_pct, actual_pct) {
+        (Some((nombre, Some(obj))), Some(act)) => format!("{nombre} {act}%/{obj}%"),
+        (Some((nombre, Some(obj))), None) => format!("{nombre} ?/{obj}%"),
+        _ => String::new(),
+    };
+    vec![
+        Cell::dim(objetivo),
+        Cell::plain(min.to_string()),
+        Cell::plain(max.to_string()),
+        Cell::toned(
+            actual.to_string(),
+            if max > 0 && actual >= max {
+                Tone::Warn
+            } else {
+                Tone::Normal
+            },
+        ),
+        Cell::dim(uso),
+    ]
+}
+
+/// `matchLabels` como `k=v,k=v`; vacío significa "todos los pods".
+pub fn selector_corto(sel: Option<&Value>) -> String {
+    let pares: Vec<String> = sel
+        .and_then(|s| s.get("matchLabels"))
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("")))
+                .collect()
+        })
+        .unwrap_or_default();
+    if pares.is_empty() {
+        "<todos>".to_string()
+    } else {
+        pares.join(",")
+    }
+}
+
+fn lista_str(v: Option<&Value>, k: &str) -> String {
+    v.and_then(|v| v.get(k))
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
+}
+
+/// Un IntOrString (`3` o `"25%"`) como texto.
+pub fn cantidad(v: Option<&Value>, k: &str) -> String {
+    match v.and_then(|v| v.get(k)) {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn si_no(v: Option<bool>) -> String {
+    match v {
+        Some(true) => "sí".into(),
+        Some(false) => "no".into(),
+        None => String::new(),
+    }
+}
+
+fn tilde(v: bool) -> String {
+    if v {
+        "✓".into()
+    } else {
+        String::new()
+    }
+}
+
+/// Los primeros `n` elementos y cuántos quedaron afuera.
+pub fn resumir(items: &[String], n: usize) -> String {
+    if items.len() <= n {
+        items.join(", ")
+    } else {
+        format!("{} +{}", items[..n].join(", "), items.len() - n)
+    }
+}
+
+fn str_de(v: &Value, k: &str) -> String {
+    v.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string()
 }
 
 fn celdas_pod(o: &DynamicObject, spec: Option<&Value>, status: Option<&Value>) -> Vec<Cell> {
@@ -747,6 +1140,11 @@ pub fn edad(creado: Option<Timestamp>) -> String {
         Some(t) => humano(Timestamp::now().duration_since(t)),
         None => String::new(),
     }
+}
+
+/// Edad relativa a partir de una fecha RFC 3339; si no parsea, va tal cual.
+pub fn edad_desde_rfc3339(s: &str) -> String {
+    desde_rfc3339_relativo(s)
 }
 
 fn desde_rfc3339_relativo(s: &str) -> String {

@@ -172,10 +172,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let metricas = columns::tiene_metricas(&kind).then_some(&pane.metricas);
     // Ya se resolvió arriba, antes de prestar el store mutablemente.
     let permisos = permisos.as_ref();
-    let col_estado = columns::indice_estado(&kind, mostrar_ns);
     let Some(store) = pane.store.as_mut() else {
         return;
     };
+    let col_estado = columns::indice_estado(&kind, mostrar_ns, store.columnas_crd());
     store.set_col_estado(col_estado);
     store.set_filtro(&busqueda);
     store.refrescar();
@@ -268,7 +268,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     }
 
     let mut clic_en: Option<usize> = None;
-    let cabeceras = columns::headers(&kind, mostrar_ns);
+    let cabeceras = columns::headers(&kind, mostrar_ns, store.columnas_crd());
     let sep = ui.spacing().item_spacing.x;
     let (anchos, scrollear) = repartir_anchos(&cabeceras, ui.available_width(), sep);
     let ancho_pedido: f32 = anchos.iter().sum::<f32>() + sep * cabeceras.len() as f32;
@@ -490,8 +490,8 @@ fn selector_estado(ui: &mut egui::Ui, store: &mut crate::store::Store, id: u64) 
     }
     let actual = store.filtro_estado().clone();
     // El combo dice qué columna filtra: en Events es "tipo", no "estado".
-    let etiqueta = columns::titulo_estado(store.kind())
-        .unwrap_or("Estado")
+    let etiqueta = columns::titulo_estado(store.kind(), store.columnas_crd())
+        .unwrap_or_else(|| "Estado".into())
         .to_lowercase();
     let (texto, color) = match &actual {
         FiltroEstado::Todos => (format!("{etiqueta}: todos"), theme::TEXTO_TENUE),
@@ -785,7 +785,7 @@ mod tests {
         anchos
             .iter()
             .map(|w| ColSpec {
-                title: "x",
+                title: "x".into(),
                 width: Some(*w),
             })
             .collect()

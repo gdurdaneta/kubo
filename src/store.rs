@@ -10,6 +10,7 @@ use kube::api::DynamicObject;
 use kube::ResourceExt;
 
 use crate::columns::{self, Cell};
+use crate::k8s::printer::ColumnaCrd;
 
 struct Entry {
     obj: DynamicObject,
@@ -38,6 +39,12 @@ const ESTADOS_SANOS: &[&str] = &[
     "Bound",
     // Events: lo que no es Normal es Warning.
     "Normal",
+    // Columnas de CRD: Ready=True, Argo Synced/Healthy.
+    "True",
+    "Synced",
+    "Healthy",
+    "Available",
+    "Complete",
 ];
 
 pub fn estado_sano(e: &str) -> bool {
@@ -47,6 +54,8 @@ pub fn estado_sano(e: &str) -> bool {
 pub struct Store {
     kind: String,
     mostrar_ns: bool,
+    /// Columnas del CRD (recursos custom); vacío para los kinds nativos.
+    columnas_crd: Vec<ColumnaCrd>,
     items: BTreeMap<String, Entry>,
     /// Buffer del listado inicial: la tabla no parpadea al resincronizar.
     buffer: Option<BTreeMap<String, Entry>>,
@@ -68,6 +77,7 @@ impl Store {
         Self {
             kind,
             mostrar_ns,
+            columnas_crd: Vec::new(),
             items: BTreeMap::new(),
             buffer: None,
             view: Vec::new(),
@@ -90,13 +100,35 @@ impl Store {
     }
 
     fn entrada(&self, o: DynamicObject) -> Entry {
-        let cells = columns::row(&self.kind, &o, self.mostrar_ns);
+        let cells = columns::row(&self.kind, &o, self.mostrar_ns, &self.columnas_crd);
         let creado = o.creation_timestamp().map(|t| t.0);
         Entry {
             obj: o,
             cells,
             creado,
         }
+    }
+
+    pub fn columnas_crd(&self) -> &[ColumnaCrd] {
+        &self.columnas_crd
+    }
+
+    /// Columnas del CRD, que suelen llegar después de las primeras filas: se
+    /// recalculan las celdas ya cacheadas.
+    pub fn set_columnas_crd(&mut self, cols: Vec<ColumnaCrd>) {
+        if self.columnas_crd == cols {
+            return;
+        }
+        self.columnas_crd = cols;
+        let (kind, ns, cols) = (&self.kind, self.mostrar_ns, &self.columnas_crd);
+        for e in self
+            .items
+            .values_mut()
+            .chain(self.buffer.iter_mut().flat_map(|b| b.values_mut()))
+        {
+            e.cells = columns::row(kind, &e.obj, ns, cols);
+        }
+        self.dirty = true;
     }
 
     pub fn init_start(&mut self) {
@@ -380,11 +412,14 @@ mod tests {
 
     #[test]
     fn filtra_events_warning_como_problema() {
-        assert_eq!(columns::titulo_estado("Event"), Some("Tipo"));
-        assert_eq!(columns::indice_estado("Event", true), Some(2));
+        assert_eq!(
+            columns::titulo_estado("Event", &[]).as_deref(),
+            Some("Tipo")
+        );
+        assert_eq!(columns::indice_estado("Event", true, &[]), Some(2));
 
         let mut s = Store::new("Event".into(), true);
-        s.set_col_estado(columns::indice_estado("Event", true));
+        s.set_col_estado(columns::indice_estado("Event", true, &[]));
         s.init_start();
         s.init_apply(evento("normal", "Normal"));
         s.init_apply(evento("warning", "Warning"));

@@ -41,6 +41,8 @@ pub struct Cluster {
     /// Qué permite el RBAC, por (namespace, recurso). Se llena a medida que se
     /// abren vistas y se comparte entre los paneles del mismo contexto.
     pub permisos: HashMap<String, k8s::permisos::Permisos>,
+    /// Columnas de tabla por Kind custom, leídas de su CRD una sola vez.
+    pub columnas_crd: HashMap<String, Vec<k8s::printer::ColumnaCrd>>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -547,6 +549,7 @@ impl App {
                 nav: Vec::new(),
                 namespaces: Vec::new(),
                 permisos: HashMap::new(),
+                columnas_crd: HashMap::new(),
             },
         );
         let bridge = self.bridge.clone();
@@ -750,6 +753,27 @@ impl App {
             item.res.ar.group.is_empty() && matches!(item.res.ar.kind.as_str(), "Pod" | "Node");
         pane.store = Some(Store::new(item.res.ar.kind.clone(), mostrar_ns));
         pane.watch_token = token;
+
+        // Un recurso custom muestra las columnas de su CRD, como kubectl. Si ya
+        // se pidió para este cluster se reutiliza; si no, llega por el bridge.
+        if !k8s::printer::es_grupo_nativo(&item.res.ar.group) {
+            let cacheadas = pane
+                .contexto
+                .as_ref()
+                .and_then(|c| self.clusters.get(c))
+                .and_then(|c| c.columnas_crd.get(&item.res.ar.kind))
+                .cloned();
+            match (cacheadas, pane.store.as_mut()) {
+                (Some(cols), Some(store)) => store.set_columnas_crd(cols),
+                _ => {
+                    let (client, ar, bridge) =
+                        (client.clone(), item.res.ar.clone(), self.bridge.clone());
+                    self.rt.spawn(async move {
+                        k8s::printer::obtener(client, ar, token, bridge).await;
+                    });
+                }
+            }
+        }
 
         pane.parar_endpoints();
         pane.parar_metricas();
@@ -1990,6 +2014,22 @@ impl App {
             K8sEvent::Namespaces { token, list } => {
                 if let Some((_, c)) = self.clusters.iter_mut().find(|(_, c)| c.token == token) {
                     c.namespaces = list;
+                }
+            }
+            K8sEvent::ColumnasCrd {
+                token,
+                clave,
+                columnas,
+            } => {
+                let mut contexto = None;
+                if let Some(pane) = self.panes.iter_mut().find(|p| p.watch_token == token) {
+                    if let Some(store) = pane.store.as_mut() {
+                        store.set_columnas_crd(columnas.clone());
+                    }
+                    contexto = pane.contexto.clone();
+                }
+                if let Some(c) = contexto.and_then(|c| self.clusters.get_mut(&c)) {
+                    c.columnas_crd.insert(clave, columnas);
                 }
             }
             K8sEvent::Watch { token, msg } => {

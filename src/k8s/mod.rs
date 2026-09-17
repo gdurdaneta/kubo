@@ -18,6 +18,7 @@ pub mod mapa;
 pub mod metricas;
 pub mod permisos;
 pub mod portforward;
+pub mod printer;
 pub mod search;
 pub mod session;
 pub mod watch;
@@ -188,6 +189,12 @@ pub enum K8sEvent {
     Permisos {
         clave: String,
         permisos: permisos::Permisos,
+    },
+    /// Columnas que declara el CRD de la vista (recursos custom).
+    ColumnasCrd {
+        token: u64,
+        clave: String,
+        columnas: Vec<printer::ColumnaCrd>,
     },
     /// Backends concretos de un Service, para el panel de detalle.
     Backends {

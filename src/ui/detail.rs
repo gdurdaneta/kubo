@@ -315,7 +315,8 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                     TabDetalle::Resumen => {
                         if obj_existe {
                             let obj = pane.store.as_ref().and_then(|s| s.objeto(&key)).unwrap();
-                            resumen(ui, &kind, obj, &historial);
+                            let crd = pane.store.as_ref().map(|s| s.columnas_crd()).unwrap_or(&[]);
+                            resumen(ui, &kind, obj, &historial, crd);
                             if kind == "Service" {
                                 backends(
                                     ui,
@@ -395,6 +396,7 @@ fn resumen(
     kind: &str,
     o: &kube::api::DynamicObject,
     historial: &[crate::k8s::metricas::Uso],
+    crd: &[crate::k8s::printer::ColumnaCrd],
 ) {
     seccion(ui, "Metadata", |ui| {
         campo(ui, "Nombre", &kube::ResourceExt::name_any(o));
@@ -430,14 +432,14 @@ fn resumen(
     if !labels.is_empty() {
         seccion(ui, "Labels", |ui| chips(ui, labels));
     }
-    let anns = kube::ResourceExt::annotations(o);
+    // last-applied-configuration es un JSON entero: no aporta acá.
+    let anns: Vec<(&String, &String)> = kube::ResourceExt::annotations(o)
+        .iter()
+        .filter(|(k, _)| !k.ends_with("last-applied-configuration"))
+        .collect();
     if !anns.is_empty() {
         seccion(ui, "Annotations", |ui| {
             for (k, v) in anns {
-                // last-applied-configuration es un JSON entero: no aporta acá.
-                if k.ends_with("last-applied-configuration") {
-                    continue;
-                }
                 campo(ui, k, v);
             }
         });
@@ -446,7 +448,15 @@ fn resumen(
     match kind {
         "Pod" => resumen_pod(ui, o),
         "Secret" | "ConfigMap" => datos_clave_valor(ui, kind, o),
-        _ => resumen_generico(ui, o),
+        _ => {
+            if !super::resumen::por_kind(ui, kind, o) {
+                // Recurso custom o kind sin resumen propio: las columnas del
+                // CRD, los escalares del spec y los del status.
+                super::resumen::columnas_crd(ui, crd, o);
+                super::resumen::spec_generico(ui, o);
+                resumen_generico(ui, o);
+            }
+        }
     }
 
     if let Some(conds) = o
@@ -917,7 +927,7 @@ fn resumen_generico(ui: &mut egui::Ui, o: &kube::api::DynamicObject) {
     });
 }
 
-fn recursos(v: Option<&Value>) -> String {
+pub(super) fn recursos(v: Option<&Value>) -> String {
     v.and_then(|v| v.as_object())
         .map(|m| {
             m.iter()
@@ -928,18 +938,18 @@ fn recursos(v: Option<&Value>) -> String {
         .unwrap_or_default()
 }
 
-fn str_de(v: &Value, k: &str) -> String {
+pub(super) fn str_de(v: &Value, k: &str) -> String {
     v.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string()
 }
 
-fn opt_str(v: Option<&Value>, k: &str) -> String {
+pub(super) fn opt_str(v: Option<&Value>, k: &str) -> String {
     v.and_then(|v| v.get(k))
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
 }
 
-fn seccion(ui: &mut egui::Ui, titulo: &str, contenido: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn seccion(ui: &mut egui::Ui, titulo: &str, contenido: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(8.0);
     ui.label(
         egui::RichText::new(titulo.to_uppercase())
@@ -950,7 +960,7 @@ fn seccion(ui: &mut egui::Ui, titulo: &str, contenido: impl FnOnce(&mut egui::Ui
     contenido(ui);
 }
 
-fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
+pub(super) fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
     if valor.is_empty() {
         return;
     }
@@ -966,7 +976,8 @@ fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
                     .color(theme::TEXTO_TENUE),
             )
             .truncate(),
-        );
+        )
+        .on_hover_text(clave);
         // El valor va en su propio hueco de ancho conocido. Ni heredar el wrap
         // del estilo ni `.wrap()` alcanzaban: dentro de un layout horizontal el
         // label tomaba su ancho natural y los valores largos salían cortados.
@@ -995,7 +1006,7 @@ fn campo(ui: &mut egui::Ui, clave: &str, valor: &str) {
     });
 }
 
-fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
+pub(super) fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
     // Dentro de un hueco de ancho exacto. Si la fila desborda, egui agranda el
     // `max_rect` del ui padre y todo lo que se dibuja después —las anotaciones,
     // las conditions— se maqueta más ancho que el panel y sale cortado.
@@ -1011,28 +1022,57 @@ fn chips(ui: &mut egui::Ui, mapa: &std::collections::BTreeMap<String, String>) {
 }
 
 fn chips_fila(ui: &mut egui::Ui, ancho: f32, mapa: &std::collections::BTreeMap<String, String>) {
-    ui.horizontal_wrapped(|ui| {
-        for (k, v) in mapa {
-            egui::Frame::new()
-                .fill(theme::PANEL_ALT)
-                .corner_radius(3)
-                .inner_margin(egui::Margin::symmetric(5, 2))
-                .show(ui, |ui| {
-                    // Ancho natural para que la fila sepa cuándo pasar de
-                    // línea, pero con tope: una etiqueta enorme se parte
-                    // adentro de su caja en vez de desbordar la fila.
-                    ui.set_max_width((ancho - 24.0).max(60.0));
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(format!("{k}={v}"))
-                                .size(11.0)
-                                .color(theme::TEXTO_TENUE),
-                        )
-                        .wrap(),
-                    );
-                });
+    // `horizontal_wrapped` decide el salto con el tamaño del ítem anterior, y
+    // un Frame no tiene tamaño hasta que se dibuja: la fila seguía de largo y
+    // salía del panel. Acá se mide cada chip antes y se arman las filas.
+    let sep = ui.spacing().item_spacing.x;
+    let fuente = egui::FontId::proportional(11.0);
+    let textos: Vec<String> = mapa.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    let anchos: Vec<f32> = textos
+        .iter()
+        .map(|t| {
+            ui.fonts_mut(|f| f.layout_no_wrap(t.clone(), fuente.clone(), theme::TEXTO_TENUE))
+                .size()
+                .x
+                + 12.0
+        })
+        .collect();
+    let tope = (ancho - 4.0).max(60.0);
+    let mut i = 0;
+    while i < textos.len() {
+        let mut fin = i;
+        let mut usado = 0.0;
+        while fin < textos.len() {
+            let w = anchos[fin].min(tope);
+            let con_sep = if fin > i { usado + sep + w } else { w };
+            if fin > i && con_sep > tope {
+                break;
+            }
+            usado = con_sep;
+            fin += 1;
         }
-    });
+        ui.horizontal(|ui| {
+            for texto in &textos[i..fin] {
+                egui::Frame::new()
+                    .fill(theme::PANEL_ALT)
+                    .corner_radius(3)
+                    .inner_margin(egui::Margin::symmetric(5, 2))
+                    .show(ui, |ui| {
+                        ui.set_max_width(tope - 12.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(texto)
+                                    .size(11.0)
+                                    .color(theme::TEXTO_TENUE),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(texto);
+                    });
+            }
+        });
+        i = fin;
+    }
 }
 
 /// Claves de un Secret o ConfigMap. En Secrets el valor arranca oculto y se

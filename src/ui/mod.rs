@@ -11,6 +11,7 @@ mod logs;
 mod map;
 mod palette;
 mod picker;
+mod resumen;
 mod sidebar;
 mod table;
 mod term;
