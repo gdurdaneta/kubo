@@ -49,7 +49,7 @@ impl App {
             });
             return;
         }
-        let objetivos = std::iter::once((c.ns.clone(), c.name.clone())).chain(c.extra.into_iter());
+        let objetivos = std::iter::once((c.ns.clone(), c.name.clone())).chain(c.extra);
         for (ns, name) in objetivos {
             let (client, ar, ctx, bridge) =
                 (client.clone(), ar.clone(), ctx.clone(), bridge.clone());
