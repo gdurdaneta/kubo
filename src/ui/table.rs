@@ -291,7 +291,9 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
             *accion = Accion::AbrirDetalle(id, k.to_string());
         }
     }
-    if cerrar && sel_key.is_some() {
+    if cerrar && !seleccion.is_empty() {
+        seleccion.clear();
+    } else if cerrar && sel_key.is_some() {
         *accion = Accion::CerrarDetalle(id);
     }
 
@@ -418,13 +420,12 @@ fn cuerpo(
                 let visibles: Vec<String> = (0..filas)
                     .filter_map(|i| store.fila(i).map(|(k, _, _)| k.to_string()))
                     .collect();
-                let todas = !visibles.is_empty() && visibles.iter().all(|k| seleccion.contains(k));
+                let marcadas = visibles.iter().filter(|k| seleccion.contains(*k)).count();
+                let todas = !visibles.is_empty() && marcadas == visibles.len();
                 let mut marcada = todas;
-                if ui
-                    .checkbox(&mut marcada, "")
-                    .on_hover_text("Seleccionar todo lo visible")
-                    .changed()
-                {
+                let (cambio, resp) = casilla(ui, &mut marcada, marcadas > 0 && !todas);
+                resp.on_hover_text("Seleccionar todo lo visible");
+                if cambio {
                     if marcada {
                         seleccion.extend(visibles);
                     } else {
@@ -477,7 +478,7 @@ fn cuerpo(
 
                 row.col(|ui| {
                     let mut m = marcada;
-                    if ui.checkbox(&mut m, "").changed() {
+                    if casilla(ui, &mut m, false).0 {
                         if m {
                             seleccion.insert(key.clone());
                         } else {
@@ -518,7 +519,10 @@ fn cuerpo(
                 });
                 row.col(|ui| {
                     let (ns_m, nombre_m) = partir_key(&key);
-                    ui.menu_button("⋮", |ui| {
+                    egui::containers::menu::MenuButton::from_button(
+                        egui::Button::new("⋮").frame(false),
+                    )
+                    .ui(ui, |ui| {
                         menu_acciones(ui, pane_id, kind, &key, ns_m, nombre_m, permisos, accion);
                     });
                 });
@@ -921,12 +925,21 @@ fn barra_lote(
         c.extra = objetivos.collect();
         Accion::Confirmar(c)
     };
+    let ancho = ui.available_width();
     egui::Frame::new()
         .fill(theme::SELECCION)
         .inner_margin(egui::Margin::symmetric(8, 3))
         .show(ui, |ui| {
+            // Clavada al ancho del panel: si no, con la tabla en scroll
+            // horizontal la barra se estiraba y "limpiar" quedaba fuera.
+            ui.set_min_width(ancho - 16.0);
+            ui.set_max_width(ancho - 16.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("{} seleccionados", claves.len())).strong());
+                ui.label(egui::RichText::new(format!("{} seleccionados", claves.len())).strong())
+                    .on_hover_text(
+                        "espacio marca la fila del cursor · ctrl+clic también · \
+                         la casilla de la cabecera marca todo lo visible · Esc limpia",
+                    );
                 ui.separator();
                 let ro = crate::app::solo_lectura();
                 if ro {
@@ -959,6 +972,8 @@ fn barra_lote(
                 {
                     *accion = confirmar(Verbo::Borrar);
                 }
+                // Solo "limpiar" a la derecha: un texto largo ahí se dibujaba
+                // encima de los botones cuando el panel era angosto.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .add(egui::Button::new("× limpiar").frame(false))
@@ -967,10 +982,6 @@ fn barra_lote(
                     {
                         seleccion.clear();
                     }
-                    ui.colored_label(
-                        theme::TEXTO_TENUE,
-                        "espacio marca la fila · ctrl+clic también · casilla de arriba: todo",
-                    );
                 });
             });
         });
@@ -1035,4 +1046,57 @@ mod tests {
             );
         }
     }
+}
+
+/// Casilla compacta y plana: la de egui es grande y con borde grueso, y en
+/// una tabla densa se comía la fila. `parcial` dibuja un guion (cabecera con
+/// algunas filas marcadas). Devuelve si cambió y la respuesta.
+fn casilla(ui: &mut egui::Ui, marcada: &mut bool, parcial: bool) -> (bool, egui::Response) {
+    let lado = 13.0;
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(lado + 4.0, ALTO_FILA - 4.0),
+        egui::Sense::click(),
+    );
+    let caja = egui::Rect::from_center_size(rect.center(), egui::vec2(lado, lado));
+    let p = ui.painter();
+    let radio = 3.0;
+    if *marcada || parcial {
+        p.rect_filled(caja, radio, theme::ACENTO);
+        let trazo = egui::Stroke::new(1.8, theme::FONDO);
+        if *marcada {
+            let a = caja.left_center() + egui::vec2(3.0, 0.5);
+            let b = caja.center() + egui::vec2(-1.0, 3.2);
+            let c = caja.right_top() + egui::vec2(-3.0, 3.5);
+            p.line_segment([a, b], trazo);
+            p.line_segment([b, c], trazo);
+        } else {
+            p.line_segment(
+                [
+                    caja.left_center() + egui::vec2(3.0, 0.0),
+                    caja.right_center() + egui::vec2(-3.0, 0.0),
+                ],
+                trazo,
+            );
+        }
+    } else {
+        if resp.hovered() {
+            p.rect_filled(caja, radio, theme::HOVER);
+        }
+        let borde = if resp.hovered() {
+            theme::TEXTO_TENUE
+        } else {
+            theme::BORDE_FUERTE
+        };
+        p.rect_stroke(
+            caja,
+            radio,
+            egui::Stroke::new(1.0, borde),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let cambio = resp.clicked();
+    if cambio {
+        *marcada = !*marcada;
+    }
+    (cambio, resp)
 }
