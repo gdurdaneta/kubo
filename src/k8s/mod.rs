@@ -17,6 +17,7 @@ pub mod logs;
 pub mod mapa;
 pub mod metricas;
 pub mod permisos;
+pub mod pods;
 pub mod portforward;
 pub mod printer;
 pub mod search;
@@ -189,6 +190,12 @@ pub enum K8sEvent {
     Permisos {
         clave: String,
         permisos: permisos::Permisos,
+    },
+    /// Pod de un workload, resuelto por selector, para abrir logs o shell.
+    PodResuelto {
+        pane: u64,
+        que: pods::QuePod,
+        pod: Box<DynamicObject>,
     },
     /// Columnas que declara el CRD de la vista (recursos custom).
     ColumnasCrd {

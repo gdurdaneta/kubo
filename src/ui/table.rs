@@ -89,13 +89,13 @@ fn tiene_mapa(kind: &str) -> bool {
 }
 
 /// Kinds que soportan escalar y rollout restart.
-fn escalable(kind: &str) -> bool {
+pub(super) fn escalable(kind: &str) -> bool {
     matches!(
         kind,
         "Deployment" | "StatefulSet" | "ReplicaSet" | "ReplicationController"
     )
 }
-fn reiniciable(kind: &str) -> bool {
+pub(super) fn reiniciable(kind: &str) -> bool {
     matches!(kind, "Deployment" | "StatefulSet" | "DaemonSet" | "Pod")
 }
 

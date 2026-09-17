@@ -172,6 +172,10 @@ const C_ENDPOINTSLICE: &[ColSpec] = &[
     col("Endpoints", 90.0),
     col("Puertos", 160.0),
 ];
+/// Para un CRD que no declara columnas: estado inferido del status y un
+/// resumen del spec. Ni kubectl ni Lens muestran nada en ese caso.
+const C_GENERICO: &[ColSpec] = &[col("Estado", 120.0), col("Spec", 340.0)];
+const C_APISERVICE: &[ColSpec] = &[col("Servicio", 220.0), col("Disponible", 100.0)];
 const C_SERVICEACCOUNT: &[ColSpec] = &[col("Secrets", 80.0)];
 const C_CRD: &[ColSpec] = &[
     col("Grupo", 200.0),
@@ -198,6 +202,7 @@ fn extra_cols(kind: &str) -> &'static [ColSpec] {
         "PriorityClass" => C_PRIORITYCLASS,
         "Endpoints" => C_ENDPOINTS,
         "EndpointSlice" => C_ENDPOINTSLICE,
+        "APIService" => C_APISERVICE,
         "Job" => C_JOB,
         "CronJob" => C_CRONJOB,
         "Service" => C_SERVICE,
@@ -223,8 +228,10 @@ pub fn headers(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Vec<ColSpec>
     let fijas = extra_cols(kind);
     v.extend_from_slice(fijas);
     // Un recurso custom sin columnas propias usa las que declara su CRD,
-    // igual que `kubectl get`.
-    if fijas.is_empty() {
+    // igual que `kubectl get`; si el CRD tampoco declara, se infieren.
+    if fijas.is_empty() && !crd.iter().any(|c| c.prioridad == 0) {
+        v.extend_from_slice(C_GENERICO);
+    } else if fijas.is_empty() {
         v.extend(crd.iter().filter(|c| c.prioridad == 0).map(|c| ColSpec {
             title: Cow::Owned(c.nombre.clone()),
             width: Some(match c.tipo.as_str() {
@@ -260,6 +267,9 @@ pub fn tiene_metricas(kind: &str) -> bool {
 pub fn titulo_estado(kind: &str, crd: &[ColumnaCrd]) -> Option<String> {
     let fijas = extra_cols(kind);
     if fijas.is_empty() {
+        if !crd.iter().any(|c| c.prioridad == 0) {
+            return Some("Estado".to_string());
+        }
         return crd
             .iter()
             .filter(|c| c.prioridad == 0)
@@ -298,6 +308,9 @@ pub fn indice_estado(kind: &str, mostrar_ns: bool, crd: &[ColumnaCrd]) -> Option
     }
     let fijas = extra_cols(kind);
     if fijas.is_empty() {
+        if !crd.iter().any(|c| c.prioridad == 0) {
+            return Some(i);
+        }
         return crd
             .iter()
             .filter(|c| c.prioridad == 0)
@@ -322,7 +335,12 @@ pub fn row(kind: &str, o: &DynamicObject, mostrar_ns: bool, crd: &[ColumnaCrd]) 
     if mostrar_ns {
         v.push(Cell::dim(o.namespace().unwrap_or_default()));
     }
-    if extra_cols(kind).is_empty() {
+    if extra_cols(kind).is_empty() && !crd.iter().any(|c| c.prioridad == 0) {
+        let estado = estado_inferido(&o.data).unwrap_or_default();
+        let tono = tono_de(&estado);
+        v.push(Cell::toned(estado, tono));
+        v.push(Cell::dim(resumen_spec(&o.data)));
+    } else if extra_cols(kind).is_empty() {
         v.extend(crd.iter().filter(|c| c.prioridad == 0).map(|c| {
             let valor = printer::celda(c, &o.data);
             let tono = tono_de(&valor);
@@ -730,6 +748,20 @@ fn extra_cells(kind: &str, o: &DynamicObject) -> Vec<Cell> {
                 Cell::dim(puertos.join(",")),
             ]
         }
+        "APIService" => {
+            let svc = spec
+                .and_then(|s| s.get("service"))
+                .filter(|s| !s.is_null())
+                .map(|s| format!("{}/{}", str_de(s, "namespace"), str_de(s, "name")))
+                .unwrap_or_else(|| "Local".into());
+            let disp = status
+                .and_then(|s| s.get("conditions"))
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.iter().find(|c| str_de(c, "type") == "Available"))
+                .map(|c| str_de(c, "status"))
+                .unwrap_or_default();
+            vec![Cell::dim(svc), Cell::toned(disp.clone(), tono_de(&disp))]
+        }
         "EndpointSlice" => {
             let n = d
                 .get("endpoints")
@@ -801,6 +833,177 @@ fn celdas_hpa(spec: Option<&Value>, status: Option<&Value>) -> Vec<Cell> {
         ),
         Cell::dim(uso),
     ]
+}
+
+/// Estado de un objeto cuyo CRD no dice cómo mostrarlo: se prueban los
+/// campos que usan casi todos los operadores (`phase`, `state`, `health`,
+/// la condición Ready/Available/Succeeded) y, si falla, dice por qué.
+pub fn estado_inferido(d: &Value) -> Option<String> {
+    let status = d.get("status")?;
+    for k in ["phase", "state", "status", "syncStatus"] {
+        if let Some(s) = status.get(k).and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    if let Some(s) = status
+        .get("health")
+        .and_then(|h| h.get("status"))
+        .and_then(|v| v.as_str())
+    {
+        return Some(s.to_string());
+    }
+    if let Some(b) = status.get("ready").and_then(|v| v.as_bool()) {
+        return Some(if b { "Ready" } else { "NotReady" }.to_string());
+    }
+    let conds = status.get("conditions")?.as_array()?;
+    for tipo in [
+        "Ready",
+        "Available",
+        "Succeeded",
+        "Healthy",
+        "Synced",
+        "Reconciled",
+        "Accepted",
+        "Programmed",
+    ] {
+        if let Some(c) = conds.iter().find(|c| str_de(c, "type") == tipo) {
+            let ok = str_de(c, "status");
+            if ok == "True" {
+                return Some(tipo.to_string());
+            }
+            let razon = str_de(c, "reason");
+            return Some(if razon.is_empty() {
+                format!("Not{tipo}")
+            } else {
+                format!("Not{tipo}: {razon}")
+            });
+        }
+    }
+    // Cualquier condición en False con razón: mejor que nada.
+    conds
+        .iter()
+        .find(|c| str_de(c, "status") == "False")
+        .map(|c| {
+            let razon = str_de(c, "reason");
+            if razon.is_empty() {
+                format!("{} False", str_de(c, "type"))
+            } else {
+                razon
+            }
+        })
+}
+
+/// Lo más identificador del spec en una línea: primero campos conocidos
+/// (schedule, hosts, selector, namespaces…) y si no, los escalares.
+pub fn resumen_spec(d: &Value) -> String {
+    let Some(spec) = d.get("spec") else {
+        return String::new();
+    };
+    let mut partes: Vec<String> = Vec::new();
+    let texto = |v: &Value| -> String {
+        match v {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Array(a) => {
+                let items: Vec<String> = a
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect();
+                if items.is_empty() {
+                    format!("{} items", a.len())
+                } else if items.len() > 3 {
+                    format!("{} +{}", items[..3].join(","), items.len() - 3)
+                } else {
+                    items.join(",")
+                }
+            }
+            Value::Object(m) => m
+                .iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| format!("{k}={s}")))
+                .collect::<Vec<_>>()
+                .join(","),
+            Value::Null => String::new(),
+        }
+    };
+    const CONOCIDOS: &[&str] = &[
+        "schedule",
+        "hosts",
+        "host",
+        "includedNamespaces",
+        "namespaces",
+        "targetRef",
+        "scaleTargetRef",
+        "type",
+        "provider",
+        "source",
+        "destination",
+        "repoURL",
+        "url",
+        "endpoint",
+        "address",
+        "port",
+        "ports",
+        "backupName",
+        "storageLocation",
+        "ttl",
+        "suspend",
+        "template",
+    ];
+    for k in CONOCIDOS {
+        if let Some(v) = spec.get(k) {
+            let t = match (k, v) {
+                (&"selector", _) | (&"template", _) => String::new(),
+                (_, Value::Object(m)) if m.contains_key("matchLabels") => selector_corto(Some(v)),
+                (_, Value::Object(m)) => m
+                    .iter()
+                    .filter_map(|(k2, v2)| v2.as_str().map(|s| format!("{k2}={s}")))
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(","),
+                _ => texto(v),
+            };
+            if !t.is_empty() {
+                partes.push(format!("{k}: {t}"));
+            }
+        }
+        if partes.len() >= 3 {
+            break;
+        }
+    }
+    for k in [
+        "selector",
+        "podSelector",
+        "workloadSelector",
+        "namespaceSelector",
+    ] {
+        if partes.len() >= 3 {
+            break;
+        }
+        if let Some(v) = spec.get(k) {
+            let t = if v.get("matchLabels").is_some() {
+                selector_corto(Some(v))
+            } else {
+                texto(v)
+            };
+            if !t.is_empty() && t != "<todos>" {
+                partes.push(format!("{k}: {t}"));
+            }
+        }
+    }
+    if partes.is_empty() {
+        if let Some(m) = spec.as_object() {
+            partes = m
+                .iter()
+                .filter(|(_, v)| v.is_string() || v.is_number() || v.is_boolean())
+                .take(3)
+                .map(|(k, v)| format!("{k}: {}", texto(v)))
+                .collect();
+        }
+    }
+    partes.join("  ·  ")
 }
 
 /// `matchLabels` como `k=v,k=v`; vacío significa "todos los pods".
@@ -1169,5 +1372,43 @@ fn humano(d: SignedDuration) -> String {
         format!("{}d", s / 86_400)
     } else {
         format!("{}a", s / (86_400 * 365))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn estado_inferido_de_fase_condiciones_y_salud() {
+        assert_eq!(
+            estado_inferido(&json!({"status": {"phase": "Completed"}})).as_deref(),
+            Some("Completed")
+        );
+        assert_eq!(
+            estado_inferido(&json!({"status": {"health": {"status": "Degraded"}}})).as_deref(),
+            Some("Degraded")
+        );
+        let c = json!({"status": {"conditions": [
+            {"type": "Progressing", "status": "True"},
+            {"type": "Ready", "status": "False", "reason": "ImagePull"}]}});
+        assert_eq!(estado_inferido(&c).as_deref(), Some("NotReady: ImagePull"));
+        let ok = json!({"status": {"conditions": [{"type": "Ready", "status": "True"}]}});
+        assert_eq!(estado_inferido(&ok).as_deref(), Some("Ready"));
+        assert_eq!(estado_inferido(&json!({"spec": {}})), None);
+    }
+
+    #[test]
+    fn resumen_spec_prefiere_campos_conocidos() {
+        let backup = json!({"spec": {"includedNamespaces": ["a", "b"], "ttl": "720h0m0s", "storageLocation": "default"}});
+        let r = resumen_spec(&backup);
+        assert!(r.starts_with("includedNamespaces: a,b"), "{r}");
+        assert!(r.contains("storageLocation: default"), "{r}");
+        let sm = json!({"spec": {"selector": {"matchLabels": {"app": "x"}}, "endpoints": [{"port": "http"}]}});
+        assert_eq!(resumen_spec(&sm), "selector: app=x");
+        let raro = json!({"spec": {"foo": 1, "bar": true, "nested": {"x": 1}}});
+        assert_eq!(resumen_spec(&raro), "bar: true  ·  foo: 1");
+        assert_eq!(resumen_spec(&json!({})), "");
     }
 }

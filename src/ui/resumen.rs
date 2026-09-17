@@ -91,6 +91,12 @@ pub fn por_kind(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject) -> 
 /// Para recursos custom: las mismas columnas que la tabla, como campos.
 pub fn columnas_crd(ui: &mut egui::Ui, cols: &[ColumnaCrd], o: &kube::api::DynamicObject) {
     if cols.is_empty() {
+        // Sin columnas declaradas: el mismo estado inferido que la tabla.
+        if let Some(e) = columns::estado_inferido(&o.data) {
+            seccion(ui, "Estado", |ui| {
+                campo_tono(ui, "Estado", &e, theme::color_tono(columns::tono_de(&e)));
+            });
+        }
         return;
     }
     seccion(ui, "Estado", |ui| {
@@ -125,12 +131,24 @@ pub fn spec_generico(ui: &mut egui::Ui, o: &kube::api::DynamicObject) {
             _ => None,
         })
         .collect();
-    if escalares.is_empty() {
+    let resumen = columns::resumen_spec(&o.data);
+    if escalares.is_empty() && resumen.is_empty() {
         return;
     }
     seccion(ui, "Spec", |ui| {
+        // La misma línea que la columna Spec de la tabla: selector, hosts,
+        // schedule… Lo que no es escalar solo se ve así o en el YAML.
+        if !resumen.is_empty() {
+            for parte in resumen.split("  ·  ") {
+                if let Some((k, v)) = parte.split_once(": ") {
+                    campo(ui, k, v);
+                }
+            }
+        }
         for (k, v) in escalares {
-            campo(ui, k, &v);
+            if !resumen.contains(&format!("{k}: ")) {
+                campo(ui, k, &v);
+            }
         }
     });
 }

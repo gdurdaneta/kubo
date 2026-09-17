@@ -37,6 +37,8 @@ pub enum Accion {
     CerrarDetalle(u64),
     AbrirLogs(u64, String),
     AbrirShell(u64, String),
+    /// Logs o shell de un pod del workload (Deployment, StatefulSet…).
+    PodDeWorkload(u64, String, crate::k8s::pods::QuePod),
     CerrarBottom(u64),
     ReiniciarLogs(u64),
     Refrescar(u64),
@@ -67,6 +69,7 @@ fn pane_de(a: &Accion) -> Option<u64> {
         | Accion::CerrarDetalle(id)
         | Accion::AbrirLogs(id, _)
         | Accion::AbrirShell(id, _)
+        | Accion::PodDeWorkload(id, _, _)
         | Accion::CerrarBottom(id)
         | Accion::ReiniciarLogs(id)
         | Accion::Refrescar(id)
@@ -269,6 +272,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
         }
         Accion::AbrirLogs(id, k) => app.abrir_logs(id, &k),
         Accion::AbrirShell(id, k) => app.abrir_shell(id, &k),
+        Accion::PodDeWorkload(id, k, que) => app.resolver_pod_de(id, &k, que),
         Accion::CerrarBottom(id) => {
             if let Some(p) = app.pane(id) {
                 p.cerrar_bottom();

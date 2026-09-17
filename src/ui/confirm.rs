@@ -10,25 +10,27 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
         return;
     };
 
-    // Escalar(-1) es el sentinel "precargar con las réplicas actuales".
+    // Réplicas actuales del objeto: precargan el valor (sentinel -1) y se
+    // muestran al lado para saber de dónde se parte.
+    let mut actuales: Option<i64> = None;
     if let Verbo::Escalar(n) = confirm.verbo {
+        let key = match &confirm.ns {
+            Some(ns) => format!("{ns}/{}", confirm.name),
+            None => confirm.name.clone(),
+        };
+        let pane = confirm.pane;
+        actuales = app
+            .panes
+            .iter()
+            .find(|p| p.id == pane)
+            .and_then(|p| p.store.as_ref())
+            .and_then(|s| s.objeto(&key))
+            .and_then(|o| o.data.get("spec"))
+            .and_then(|s| s.get("replicas"))
+            .and_then(|v| v.as_i64());
         if n < 0 {
-            let key = match &confirm.ns {
-                Some(ns) => format!("{ns}/{}", confirm.name),
-                None => confirm.name.clone(),
-            };
-            let actuales = app
-                .panes
-                .iter()
-                .find(|p| p.id == app.confirm.as_ref().unwrap().pane)
-                .and_then(|p| p.store.as_ref())
-                .and_then(|s| s.objeto(&key))
-                .and_then(|o| o.data.get("spec"))
-                .and_then(|s| s.get("replicas"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(1);
             if let Some(c) = app.confirm.as_mut() {
-                c.verbo = Verbo::Escalar(actuales);
+                c.verbo = Verbo::Escalar(actuales.unwrap_or(1));
             }
         }
     }
@@ -117,14 +119,39 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, _accion: &mut Accion) {
                 ui.label(egui::RichText::new("Escalar").strong().size(15.0));
                 ui.add_space(6.0);
                 ui.label(destino);
-                ui.add_space(4.0);
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label("Réplicas:");
-                    ui.add(egui::DragValue::new(n).range(0..=500));
-                    if *n == 0 {
-                        ui.colored_label(theme::WARN, "⚠ queda sin pods");
+                    if ui.add_enabled(*n > 0, egui::Button::new("−")).clicked() {
+                        *n -= 1;
+                    }
+                    ui.add(egui::DragValue::new(n).range(0..=500).speed(0.1));
+                    if ui.add_enabled(*n < 500, egui::Button::new("+")).clicked() {
+                        *n += 1;
+                    }
+                    if let Some(a) = actuales {
+                        ui.colored_label(
+                            theme::TEXTO_TENUE,
+                            if a == *n {
+                                format!("(actual: {a})")
+                            } else {
+                                format!("(actual: {a} → {n})")
+                            },
+                        );
                     }
                 });
+                // Atajos para los valores de siempre.
+                ui.horizontal(|ui| {
+                    ui.colored_label(theme::TEXTO_TENUE, "rápido:");
+                    for v in [0_i64, 1, 2, 3, 5, 10] {
+                        if ui.selectable_label(*n == v, v.to_string()).clicked() {
+                            *n = v;
+                        }
+                    }
+                });
+                if *n == 0 {
+                    ui.colored_label(theme::WARN, "⚠ queda sin pods");
+                }
             }
             Verbo::AplicarYaml(_) => {
                 ui.label(

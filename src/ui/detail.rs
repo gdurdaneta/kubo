@@ -41,6 +41,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
     // los botones en paneles angostos.
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 7.0;
             if ui.button("×").on_hover_text("Cerrar").clicked() {
                 *accion = Accion::CerrarDetalle(id);
             }
@@ -58,26 +59,74 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             })
             .response
             .on_hover_text("Acciones");
-            if ui
-                .button("✎ Editar")
-                .on_hover_text("Editar el manifiesto YAML y aplicarlo")
+            // Barra de iconos como la de Lens, de derecha a izquierda. Borrar
+            // no está acá a propósito: queda en ⋮, detrás de un clic más.
+            let icono = |ui: &mut egui::Ui, glifo: &str, ayuda: &str, habilitado: bool| {
+                ui.add_enabled(
+                    habilitado,
+                    egui::Button::new(egui::RichText::new(glifo).size(15.0)).frame(false),
+                )
+                .on_hover_text(ayuda)
+                .on_disabled_hover_text("Tu credencial no puede hacer esto acá")
                 .clicked()
-            {
+            };
+            let puede = |verbo: &str| permisos.as_ref().is_none_or(|p| !p.prohibido(verbo));
+            let kind = det.kind.clone();
+            let (ns, name, key) = (det.ns.clone(), det.name.clone(), det.key.clone());
+            let confirmar = |verbo: crate::app::Verbo| {
+                Accion::Confirmar(crate::app::Confirmacion {
+                    pane: id,
+                    verbo,
+                    kind: kind.clone(),
+                    ns: ns.clone(),
+                    name: name.clone(),
+                })
+            };
+
+            if icono(ui, "✎", "Editar el manifiesto YAML y aplicarlo", true) {
                 // El YAML ya se pidió al abrir el detalle: basta con saltar a
                 // la pestaña, y como el tab bar se dibuja después se ve en este
-                // mismo frame.
+                // mismo frame. Si todavía no llegó la copia del API server, el
+                // botón de la pestaña queda deshabilitado y el usuario lo ve ahí.
                 det.tab = TabDetalle::Yaml;
-                // Si todavía no llegó la copia del API server, el botón de la
-                // pestaña queda deshabilitado y el usuario lo ve ahí.
                 det.editando = det.yaml_fresco;
             }
-            if det.kind == "Pod" {
-                if ui.button("Shell").clicked() {
-                    *accion = Accion::AbrirShell(id, det.key.clone());
+            let es_workload = crate::ui::table::escalable(&kind) || kind == "DaemonSet";
+            if kind == "Pod" {
+                if icono(ui, ">_", "Shell en el pod", true) {
+                    *accion = Accion::AbrirShell(id, key.clone());
                 }
-                if ui.button("Logs").clicked() {
-                    *accion = Accion::AbrirLogs(id, det.key.clone());
+                if icono(ui, "≡", "Logs del pod", true) {
+                    *accion = Accion::AbrirLogs(id, key.clone());
                 }
+            } else if es_workload {
+                if icono(ui, ">_", "Shell en un pod del workload", true) {
+                    *accion =
+                        Accion::PodDeWorkload(id, key.clone(), crate::k8s::pods::QuePod::Shell);
+                }
+                if icono(ui, "≡", "Logs de un pod del workload", true) {
+                    *accion =
+                        Accion::PodDeWorkload(id, key.clone(), crate::k8s::pods::QuePod::Logs);
+                }
+            }
+            if crate::ui::table::reiniciable(&kind) {
+                let verbo = if kind == "Pod" { "delete" } else { "patch" };
+                let ayuda = if kind == "Pod" {
+                    "Reiniciar: borra el pod y su controlador lo recrea"
+                } else {
+                    "Rollout restart"
+                };
+                if icono(ui, "↻", ayuda, puede(verbo)) {
+                    *accion = confirmar(crate::app::Verbo::Reiniciar);
+                }
+            }
+            if crate::ui::table::escalable(&kind)
+                && icono(ui, "⇅", "Escalar réplicas", puede("patch"))
+            {
+                *accion = confirmar(crate::app::Verbo::Escalar(-1));
+            }
+            if kind == "Service" && icono(ui, "⇄", "Port-forward: exponerlo en local", true) {
+                *accion = Accion::PedirForward(id, key.clone());
             }
 
             // Lo que queda a la izquierda de los botones.

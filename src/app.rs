@@ -1573,13 +1573,45 @@ impl App {
     // -------------------------------------------------------- logs y shell
 
     pub fn abrir_logs(&mut self, pane_id: u64, key: &str) {
-        let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
+        let Some(obj) = self.objeto_del_pane(pane_id, key) else {
             return;
         };
-        let Some(store) = pane.store.as_ref() else {
+        self.abrir_logs_de(pane_id, &obj);
+    }
+
+    fn objeto_del_pane(&self, pane_id: u64, key: &str) -> Option<kube::api::DynamicObject> {
+        self.panes
+            .iter()
+            .find(|p| p.id == pane_id)?
+            .store
+            .as_ref()?
+            .objeto(key)
+            .cloned()
+    }
+
+    /// Logs y shell de un workload: se resuelve un pod por su selector y la
+    /// respuesta llega como `PodResuelto`.
+    pub fn resolver_pod_de(&mut self, pane_id: u64, key: &str, que: k8s::pods::QuePod) {
+        let Some(obj) = self.objeto_del_pane(pane_id, key) else {
             return;
         };
-        let Some(obj) = store.objeto(key) else { return };
+        let Some(client) = self.client_del_pane(pane_id) else {
+            return;
+        };
+        let (Some(ns), Some(selector)) = (
+            kube::ResourceExt::namespace(&obj),
+            k8s::pods::selector_de(&obj),
+        ) else {
+            self.toast("este recurso no tiene selector de pods", true);
+            return;
+        };
+        let bridge = self.bridge.clone();
+        self.rt.spawn(async move {
+            k8s::pods::resolver(client, ns, selector, pane_id, que, bridge).await;
+        });
+    }
+
+    pub fn abrir_logs_de(&mut self, pane_id: u64, obj: &kube::api::DynamicObject) {
         let Some(ns) = kube::ResourceExt::namespace(obj) else {
             return;
         };
@@ -1643,17 +1675,17 @@ impl App {
     }
 
     pub fn abrir_shell(&mut self, pane_id: u64, key: &str) {
+        let Some(obj) = self.objeto_del_pane(pane_id, key) else {
+            return;
+        };
+        self.abrir_shell_de(pane_id, &obj);
+    }
+
+    pub fn abrir_shell_de(&mut self, pane_id: u64, obj: &kube::api::DynamicObject) {
         let token = self.token();
         let Some(client) = self.client_del_pane(pane_id) else {
             return;
         };
-        let Some(pane) = self.panes.iter().find(|p| p.id == pane_id) else {
-            return;
-        };
-        let Some(store) = pane.store.as_ref() else {
-            return;
-        };
-        let Some(obj) = store.objeto(key) else { return };
         let Some(ns) = kube::ResourceExt::namespace(obj) else {
             return;
         };
@@ -1740,16 +1772,20 @@ impl App {
             }
         }
 
-        // KUBO_TEST_CONFIRM=Kind:ns:nombre — abre el modal de confirmación de
-        // borrado sin ejecutarlo (ejecutar requiere el clic).
+        // KUBO_TEST_CONFIRM=[escalar:]Kind:ns:nombre — abre el modal de
+        // confirmación (borrado, o escalado con el prefijo) sin ejecutarlo.
         if let Ok(spec) = std::env::var("KUBO_TEST_CONFIRM") {
             if !spec.is_empty() {
                 std::env::set_var("KUBO_TEST_CONFIRM", "");
+                let (verbo, spec) = match spec.strip_prefix("escalar:") {
+                    Some(resto) => (Verbo::Escalar(-1), resto.to_string()),
+                    None => (Verbo::Borrar, spec.clone()),
+                };
                 let partes: Vec<&str> = spec.split(':').collect();
                 if let [kind, ns, nombre] = partes[..] {
                     self.confirm = Some(Confirmacion {
                         pane: pane_id,
-                        verbo: Verbo::Borrar,
+                        verbo,
                         kind: kind.to_string(),
                         ns: (!ns.is_empty()).then(|| ns.to_string()),
                         name: nombre.to_string(),
@@ -1779,7 +1815,24 @@ impl App {
                 if let [kind, ns, name] = partes[..] {
                     let (kind, name) = (kind.to_string(), name.to_string());
                     let ns = Some(ns.to_string());
-                    self.ir_a(pane_id, &kind, ns, &name);
+                    self.ir_a(pane_id, &kind, ns.clone(), &name);
+                    // KUBO_TEST_WL=logs|shell — sobre el recurso recién abierto,
+                    // resuelve un pod del workload y abre logs o shell.
+                    if let Ok(que) = std::env::var("KUBO_TEST_WL") {
+                        let que = match que.as_str() {
+                            "logs" => Some(k8s::pods::QuePod::Logs),
+                            "shell" => Some(k8s::pods::QuePod::Shell),
+                            _ => None,
+                        };
+                        if let Some(que) = que {
+                            std::env::set_var("KUBO_TEST_WL", "");
+                            let key = match ns {
+                                Some(ns) => format!("{ns}/{name}"),
+                                None => name.clone(),
+                            };
+                            self.resolver_pod_de(pane_id, &key, que);
+                        }
+                    }
                     return;
                 }
             }
@@ -2016,6 +2069,10 @@ impl App {
                     c.namespaces = list;
                 }
             }
+            K8sEvent::PodResuelto { pane, que, pod } => match que {
+                k8s::pods::QuePod::Logs => self.abrir_logs_de(pane, &pod),
+                k8s::pods::QuePod::Shell => self.abrir_shell_de(pane, &pod),
+            },
             K8sEvent::ColumnasCrd {
                 token,
                 clave,
@@ -2131,7 +2188,10 @@ impl App {
                             if v.lineas.len() >= MAX_LINEAS_LOG {
                                 v.lineas.pop_front();
                             }
-                            v.lineas.push_back(line);
+                            // Los logs con color (Nest, chalk, pino-pretty)
+                            // traen secuencias ANSI que egui pinta como
+                            // cuadraditos: se quitan, el color no se conserva.
+                            v.lineas.push_back(sin_ansi(&line));
                             return;
                         }
                     }
@@ -2186,6 +2246,51 @@ impl App {
     }
 }
 
+/// Quita las secuencias de escape ANSI (`ESC [ … m`, `ESC ] … BEL`, etc.).
+pub fn sin_ansi(s: &str) -> String {
+    if !s.contains('\x1b') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek() {
+            // CSI: ESC [ parámetros… byte final en 0x40..=0x7e.
+            Some('[') => {
+                chars.next();
+                for c2 in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&c2) {
+                        break;
+                    }
+                }
+            }
+            // OSC: ESC ] … hasta BEL o ESC \.
+            Some(']') => {
+                chars.next();
+                while let Some(c2) = chars.next() {
+                    if c2 == '\x07' {
+                        break;
+                    }
+                    if c2 == '\x1b' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            // Escapes de dos bytes (ESC c, ESC =, …).
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
+}
+
 fn contenedores_de(obj: &kube::api::DynamicObject) -> Vec<String> {
     obj.data
         .get("spec")
@@ -2224,5 +2329,18 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         crate::ui::dibujar(self, ui);
+    }
+}
+
+#[cfg(test)]
+mod tests_ansi {
+    #[test]
+    fn quita_ansi_de_logs() {
+        assert_eq!(
+            super::sin_ansi("\x1b[95m[Nest]\x1b[39m 1  - \x1b[38;5;3mJob\x1b[0m"),
+            "[Nest] 1  - Job"
+        );
+        assert_eq!(super::sin_ansi("sin color"), "sin color");
+        assert_eq!(super::sin_ansi("\x1b]0;titulo\x07x"), "x");
     }
 }
