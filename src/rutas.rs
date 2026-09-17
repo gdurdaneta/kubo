@@ -58,6 +58,34 @@ pub fn estado() -> Option<PathBuf> {
 /// Fuentes del sistema con los glifos que kubo dibuja (●▼×↻⇄✎⌨) y que las
 /// fuentes por defecto de egui no traen. Se prueba en orden y se usa la
 /// primera que exista.
+/// Fuente de interfaz primaria, por orden de preferencia.
+pub const FUENTES_UI: &[&str] = &[
+    "/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
+    "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
+    "/usr/share/fonts/TTF/Inter-Regular.ttf",
+    "/usr/share/fonts/inter/Inter-Regular.ttf",
+    "/usr/share/fonts/opentype/fira/FiraSans-Regular.otf",
+    "/usr/share/fonts/truetype/fira/FiraSans-Regular.ttf",
+    "/usr/share/fonts/TTF/FiraSans-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
+    "C:\\Windows\\Fonts\\segoeui.ttf",
+];
+
+/// Monoespaciada primaria (YAML, logs, terminal).
+pub const FUENTES_MONO_UI: &[&str] = &[
+    "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/TTF/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf",
+    "/usr/share/fonts/opentype/fira/FiraMono-Regular.otf",
+    "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
+    "/usr/share/fonts/TTF/FiraCode-Regular.ttf",
+    "/usr/share/fonts/truetype/ubuntu/UbuntuMono-R.ttf",
+    "C:\\Windows\\Fonts\\CascadiaMono.ttf",
+    "C:\\Windows\\Fonts\\consola.ttf",
+];
+
 pub const FUENTES_PROPORCIONALES: &[&str] = &[
     // Linux
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",

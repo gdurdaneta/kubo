@@ -142,7 +142,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
                 .stroke(egui::Stroke::new(
                     1.0,
                     if es_activo {
-                        theme::ACENTO
+                        theme::BORDE_FUERTE
                     } else {
                         theme::BORDE
                     },
@@ -291,15 +291,15 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui) {
 /// Barra superior de la aplicación: nombre + gestor de paneles.
 fn barra_app(app: &App, ui: &mut egui::Ui, accion: &mut Accion, ver_atajos: &mut bool) {
     egui::Panel::top("barra_app")
-        .exact_size(30.0)
-        .frame(marco(theme::PANEL_ALT, 4))
+        .exact_size(26.0)
+        .frame(marco(theme::PANEL, 3))
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new("kubo").strong().color(theme::ACENTO));
+                ui.label(egui::RichText::new("kubo").strong());
                 ui.separator();
                 if app.panes.len() < MAX_PANES
                     && ui
-                        .button("+ panel")
+                        .add(egui::Button::new("+ panel").frame(false))
                         .on_hover_text("Abrir otro panel (otro cluster u otro recurso)")
                         .clicked()
                 {
@@ -322,11 +322,14 @@ fn barra_app(app: &App, ui: &mut egui::Ui, accion: &mut Accion, ver_atajos: &mut
                     format!("⇄ {activos}/{n_pf}")
                 };
                 if ui
-                    .button(egui::RichText::new(etiqueta).color(if n_pf > 0 {
-                        theme::ACENTO
-                    } else {
-                        theme::TEXTO_TENUE
-                    }))
+                    .add(
+                        egui::Button::new(egui::RichText::new(etiqueta).color(if n_pf > 0 {
+                            theme::OK
+                        } else {
+                            theme::TEXTO_TENUE
+                        }))
+                        .frame(false),
+                    )
                     .on_hover_text("Port forwards (también están en Network)")
                     .clicked()
                 {
@@ -336,7 +339,10 @@ fn barra_app(app: &App, ui: &mut egui::Ui, accion: &mut Accion, ver_atajos: &mut
                 }
                 ui.separator();
                 if ui
-                    .button(egui::RichText::new("⌨ atajos").color(theme::TEXTO_TENUE))
+                    .add(
+                        egui::Button::new(egui::RichText::new("atajos").color(theme::TEXTO_TENUE))
+                            .frame(false),
+                    )
                     .on_hover_text("Atajos de teclado (F1)")
                     .clicked()
                 {
@@ -553,7 +559,7 @@ fn toasts(app: &mut App, ctx: &egui::Context) {
                         1.0,
                         if error { theme::BAD } else { theme::BORDE },
                     ))
-                    .corner_radius(6)
+                    .corner_radius(2)
                     .inner_margin(8)
                     .show(ui, |ui| {
                         ui.set_max_width(420.0);

@@ -9,8 +9,8 @@ use crate::app::App;
 use crate::nav::{NavCategory, NavItem, VistaLocal};
 use crate::theme;
 
-const ALTO_FILA: f32 = 24.0;
-const ALTO_CABECERA: f32 = 22.0;
+const ALTO_FILA: f32 = 22.0;
+const ALTO_CABECERA: f32 = 20.0;
 
 pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     let nav = {
@@ -205,16 +205,9 @@ fn categoria(
             }
             let key = item.res.key();
             let activo = sel == Some(key.as_str());
+            // La selección es el relleno del botón (SELECCION), sin barra de
+            // acento: menos cromo, más de app nativa.
             let (resp, pin) = fila_recurso(ui, item, activo, favoritos.contains(&key));
-            if activo {
-                // Barra de acento a la izquierda, como en Lens.
-                let r = resp.rect;
-                ui.painter().rect_filled(
-                    egui::Rect::from_min_size(r.min, egui::vec2(3.0, r.height())),
-                    egui::CornerRadius::same(2),
-                    theme::ACENTO,
-                );
-            }
             if resp.clicked() && !activo {
                 *sel_out = Some(item.clone());
             }
@@ -245,14 +238,6 @@ fn categoria(
                 [ui.available_width(), ALTO_FILA],
                 egui::Button::selectable(activo, (label, Atom::grow())).truncate(),
             );
-            if activo {
-                let r = resp.rect;
-                ui.painter().rect_filled(
-                    egui::Rect::from_min_size(r.min, egui::vec2(3.0, r.height())),
-                    egui::CornerRadius::same(2),
-                    theme::ACENTO,
-                );
-            }
             if resp.clicked() && !activo {
                 *sel_vl = Some(*v);
             }
@@ -307,7 +292,7 @@ fn fila_recurso(
             &item.res.ar.kind,
             egui::pos2(fila.rect.left() + 12.0, fila.rect.center().y),
             if activo {
-                theme::ACENTO
+                theme::TEXTO
             } else {
                 theme::TEXTO_TENUE
             },
@@ -475,25 +460,13 @@ fn cabecera(ui: &mut egui::Ui, cat: &NavCategory, abierta: bool, nivel: usize) -
     let (texto, color, tamaño) = if nivel == 0 {
         (
             format!("{chevron}      {}", cat.name.to_uppercase()),
-            if cat.icono == "pinned" {
-                theme::WARN
-            } else if cat.extension {
-                theme::ACENTO
-            } else {
-                theme::TEXTO_TENUE
-            },
+            // Siempre tenue: el color de acento en cabeceras es lo que hacía
+            // que el árbol pareciera una web.
+            theme::TEXTO_TENUE,
             11.0,
         )
     } else {
-        (
-            format!("{chevron}      {}", cat.name),
-            if cat.extension {
-                theme::ACENTO
-            } else {
-                theme::TEXTO
-            },
-            12.5,
-        )
+        (format!("{chevron}      {}", cat.name), theme::TEXTO, 12.0)
     };
 
     let resp = ui.add_sized(

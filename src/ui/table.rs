@@ -8,7 +8,7 @@ use crate::app::{App, Confirmacion, TabDetalle, Verbo};
 use crate::columns::{self, ColSpec};
 use crate::theme;
 
-const ALTO_FILA: f32 = 24.0;
+const ALTO_FILA: f32 = 21.0;
 /// Ancho asumido para la columna elástica al medir si la tabla entra a lo ancho.
 const ANCHO_ELASTICA: f32 = 220.0;
 /// Hasta dónde se puede achicar una columna antes de dejar de servir.
@@ -132,10 +132,10 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, accion: &mut Accion) {
     };
     egui::Frame::new()
         .fill(theme::PANEL)
-        .inner_margin(egui::Margin::symmetric(8, 5))
+        .inner_margin(egui::Margin::symmetric(6, 3))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(&item.label).strong().size(14.0));
+                ui.label(egui::RichText::new(&item.label).strong().size(12.5));
                 ui.colored_label(
                     theme::TEXTO_TENUE,
                     if vis == tot {
@@ -373,7 +373,7 @@ fn cuerpo(
     }
 
     builder
-        .header(26.0, |mut header| {
+        .header(22.0, |mut header| {
             for (i, c) in cabeceras.iter().enumerate() {
                 header.col(|ui| {
                     let flecha = if i == sort_col {
@@ -388,7 +388,7 @@ fn cuerpo(
                     let resp = ui.add(
                         egui::Label::new(
                             egui::RichText::new(format!("{}{flecha}", c.title))
-                                .size(11.5)
+                                .size(11.0)
                                 .color(if i == sort_col {
                                     theme::TEXTO
                                 } else {

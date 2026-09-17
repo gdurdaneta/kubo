@@ -91,7 +91,7 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
             egui::TextEdit::singleline(&mut p.query)
                 .hint_text("buscar recurso o vista…")
                 .desired_width(f32::INFINITY)
-                .font(egui::TextStyle::Heading),
+                .font(egui::TextStyle::Body),
         );
         if resp.changed() {
             p.desde_cambio = 0.0;
@@ -127,7 +127,7 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
                 }
                 for (i, fila) in filas.iter().enumerate() {
                     let activo = i == sel;
-                    let alto = 26.0;
+                    let alto = 22.0;
                     let (rect, resp) = ui.allocate_exact_size(
                         egui::vec2(ui.available_width(), alto),
                         egui::Sense::click(),
@@ -135,15 +135,12 @@ pub fn dibujar(app: &mut App, ctx: &egui::Context, accion: &mut Accion) {
                     if activo {
                         ui.painter().rect_filled(
                             rect,
-                            egui::CornerRadius::same(4),
-                            theme::ACENTO.linear_multiply(0.25),
+                            egui::CornerRadius::same(2),
+                            theme::SELECCION,
                         );
                     } else if resp.hovered() {
-                        ui.painter().rect_filled(
-                            rect,
-                            egui::CornerRadius::same(4),
-                            theme::PANEL_ALT,
-                        );
+                        ui.painter()
+                            .rect_filled(rect, egui::CornerRadius::same(2), theme::HOVER);
                     }
                     let (icono, principal, secundario, color) = match fila {
                         Fila::Kind { label, .. } => (

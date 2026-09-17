@@ -15,17 +15,17 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accion
     let mut toggle_nav = false;
 
     egui::Panel::top(egui::Id::new(("topbar", id)))
-        .exact_size(36.0)
+        .exact_size(28.0)
         .frame(
             egui::Frame::new()
                 .fill(theme::PANEL)
-                .inner_margin(egui::Margin::symmetric(8, 4)),
+                .inner_margin(egui::Margin::symmetric(6, 2)),
         )
         .show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 // Toggle del sidebar.
                 if ui
-                    .button(if nav_visible { "◧" } else { "◨" })
+                    .add(egui::Button::new(if nav_visible { "◧" } else { "◨" }).frame(false))
                     .on_hover_text("Mostrar/ocultar recursos")
                     .clicked()
                 {
@@ -54,12 +54,21 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, n_panes: usize, accion
 
                 selector_namespace(app, ui, id, &ns_sel, accion);
 
-                if ui.button("↻").on_hover_text("Recargar la vista").clicked() {
+                if ui
+                    .add(egui::Button::new("↻").frame(false))
+                    .on_hover_text("Recargar la vista")
+                    .clicked()
+                {
                     *accion = Accion::Refrescar(id);
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if n_panes > 1 && ui.button("×").on_hover_text("Cerrar panel").clicked() {
+                    if n_panes > 1
+                        && ui
+                            .add(egui::Button::new("×").frame(false))
+                            .on_hover_text("Cerrar panel")
+                            .clicked()
+                    {
                         *accion = Accion::CerrarPane(id);
                     }
                     estado_cluster(app, ui, id, n_panes);

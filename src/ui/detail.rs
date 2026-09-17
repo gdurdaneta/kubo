@@ -84,7 +84,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 ui.add(
-                    egui::Label::new(egui::RichText::new(&det.name).strong().size(15.0)).truncate(),
+                    egui::Label::new(egui::RichText::new(&det.name).strong().size(13.5)).truncate(),
                 )
                 .on_hover_text(&det.name);
                 let sub = match &det.ns {
@@ -353,7 +353,7 @@ pub fn dibujar(app: &mut App, ui: &mut egui::Ui, id: u64, ancho: f32, accion: &m
                             };
                             egui::Frame::new()
                                 .fill(theme::PANEL_ALT)
-                                .corner_radius(4)
+                                .corner_radius(2)
                                 .inner_margin(6)
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
@@ -813,7 +813,7 @@ fn resumen_pod(ui: &mut egui::Ui, o: &kube::api::DynamicObject) {
 
                 egui::Frame::new()
                     .fill(theme::PANEL_ALT)
-                    .corner_radius(4)
+                    .corner_radius(2)
                     .inner_margin(6)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -950,13 +950,26 @@ pub(super) fn opt_str(v: Option<&Value>, k: &str) -> String {
 }
 
 pub(super) fn seccion(ui: &mut egui::Ui, titulo: &str, contenido: impl FnOnce(&mut egui::Ui)) {
+    // Título tenue con una regla fina: separa sin usar el acento como cromo.
     ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(titulo.to_uppercase())
-            .size(11.0)
-            .color(theme::ACENTO),
-    );
-    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(titulo.to_uppercase())
+                .size(10.5)
+                .color(theme::TEXTO_TENUE),
+        );
+        let resto = ui.available_width();
+        if resto > 8.0 {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(resto, 1.0), egui::Sense::hover());
+            let y = rect.center().y;
+            ui.painter().hline(
+                rect.left() + 4.0..=rect.right(),
+                y,
+                egui::Stroke::new(1.0, theme::BORDE),
+            );
+        }
+    });
+    ui.add_space(3.0);
     contenido(ui);
 }
 
@@ -1055,7 +1068,7 @@ fn chips_fila(ui: &mut egui::Ui, ancho: f32, mapa: &std::collections::BTreeMap<S
             for texto in &textos[i..fin] {
                 egui::Frame::new()
                     .fill(theme::PANEL_ALT)
-                    .corner_radius(3)
+                    .corner_radius(2)
                     .inner_margin(egui::Margin::symmetric(5, 2))
                     .show(ui, |ui| {
                         ui.set_max_width(tope - 12.0);
@@ -1133,7 +1146,7 @@ fn datos_clave_valor(ui: &mut egui::Ui, kind: &str, o: &kube::api::DynamicObject
 
                 egui::Frame::new()
                     .fill(theme::PANEL_ALT)
-                    .corner_radius(4)
+                    .corner_radius(2)
                     .inner_margin(6)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
