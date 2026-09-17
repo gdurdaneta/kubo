@@ -140,10 +140,8 @@ fn leer(o: &DynamicObject) -> Option<(String, Uso)> {
                 sumar(&mut uso, u);
             }
         }
-    } else if let Some(u) = o.data.get("usage") {
-        sumar(&mut uso, u);
     } else {
-        return None;
+        sumar(&mut uso, o.data.get("usage")?);
     }
     Some((clave, uso))
 }

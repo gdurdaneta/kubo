@@ -882,67 +882,6 @@ pub fn menu_acciones(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cols(anchos: &[f32]) -> Vec<ColSpec> {
-        anchos
-            .iter()
-            .map(|w| ColSpec {
-                title: "x".into(),
-                width: Some(*w),
-            })
-            .collect()
-    }
-
-    /// Las columnas de un Node: son todas de ancho fijo y suman más que una
-    /// ventana angosta, que es donde se rompía.
-    const NODE: &[f32] = &[280.0, 110.0, 130.0, 110.0, 130.0, 70.0];
-
-    #[test]
-    fn con_espacio_de_sobra_respeta_los_anchos_pedidos() {
-        let (anchos, scroll) = repartir_anchos(&cols(NODE), 2000.0, 8.0);
-        assert!(!scroll);
-        assert_eq!(anchos, NODE);
-    }
-
-    #[test]
-    fn al_achicarse_encoge_en_vez_de_scrollear() {
-        let disponible = 750.0;
-        let (anchos, scroll) = repartir_anchos(&cols(NODE), disponible, 8.0);
-        assert!(!scroll, "todavía entra encogiendo, no hay que scrollear");
-        let total: f32 = anchos.iter().sum::<f32>() + 8.0 * NODE.len() as f32;
-        assert!(
-            total <= disponible + 0.5,
-            "la tabla sigue desbordando: {total} > {disponible}"
-        );
-        // La columna del nombre cede más que las chicas, pero no baja del piso.
-        assert!(anchos[0] >= ANCHO_MIN_NOMBRE);
-        assert!(anchos[0] < NODE[0]);
-        assert!(anchos.iter().skip(1).all(|w| *w >= ANCHO_MIN_COL));
-    }
-
-    #[test]
-    fn si_ni_encogidas_entran_avisa_que_hay_que_scrollear() {
-        let (anchos, scroll) = repartir_anchos(&cols(NODE), 200.0, 8.0);
-        assert!(scroll);
-        assert_eq!(anchos[0], ANCHO_MIN_NOMBRE);
-        assert!(anchos.iter().skip(1).all(|w| *w == ANCHO_MIN_COL));
-    }
-
-    #[test]
-    fn nunca_devuelve_anchos_negativos_ni_nan() {
-        for d in [0.0, 1.0, 50.0, 300.0, 900.0, 5000.0] {
-            let (anchos, _) = repartir_anchos(&cols(NODE), d, 8.0);
-            assert!(
-                anchos.iter().all(|w| w.is_finite() && *w > 0.0),
-                "ancho inválido con disponible={d}: {anchos:?}"
-            );
-        }
-    }
-}
-
 /// Cuadritos de color, uno por contenedor.
 fn celda_cuadros(ui: &mut egui::Ui, cuadros: &[Tone]) {
     let lado = 9.0;
@@ -1035,4 +974,65 @@ fn barra_lote(
                 });
             });
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cols(anchos: &[f32]) -> Vec<ColSpec> {
+        anchos
+            .iter()
+            .map(|w| ColSpec {
+                title: "x".into(),
+                width: Some(*w),
+            })
+            .collect()
+    }
+
+    /// Las columnas de un Node: son todas de ancho fijo y suman más que una
+    /// ventana angosta, que es donde se rompía.
+    const NODE: &[f32] = &[280.0, 110.0, 130.0, 110.0, 130.0, 70.0];
+
+    #[test]
+    fn con_espacio_de_sobra_respeta_los_anchos_pedidos() {
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), 2000.0, 8.0);
+        assert!(!scroll);
+        assert_eq!(anchos, NODE);
+    }
+
+    #[test]
+    fn al_achicarse_encoge_en_vez_de_scrollear() {
+        let disponible = 750.0;
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), disponible, 8.0);
+        assert!(!scroll, "todavía entra encogiendo, no hay que scrollear");
+        let total: f32 = anchos.iter().sum::<f32>() + 8.0 * NODE.len() as f32;
+        assert!(
+            total <= disponible + 0.5,
+            "la tabla sigue desbordando: {total} > {disponible}"
+        );
+        // La columna del nombre cede más que las chicas, pero no baja del piso.
+        assert!(anchos[0] >= ANCHO_MIN_NOMBRE);
+        assert!(anchos[0] < NODE[0]);
+        assert!(anchos.iter().skip(1).all(|w| *w >= ANCHO_MIN_COL));
+    }
+
+    #[test]
+    fn si_ni_encogidas_entran_avisa_que_hay_que_scrollear() {
+        let (anchos, scroll) = repartir_anchos(&cols(NODE), 200.0, 8.0);
+        assert!(scroll);
+        assert_eq!(anchos[0], ANCHO_MIN_NOMBRE);
+        assert!(anchos.iter().skip(1).all(|w| *w == ANCHO_MIN_COL));
+    }
+
+    #[test]
+    fn nunca_devuelve_anchos_negativos_ni_nan() {
+        for d in [0.0, 1.0, 50.0, 300.0, 900.0, 5000.0] {
+            let (anchos, _) = repartir_anchos(&cols(NODE), d, 8.0);
+            assert!(
+                anchos.iter().all(|w| w.is_finite() && *w > 0.0),
+                "ancho inválido con disponible={d}: {anchos:?}"
+            );
+        }
+    }
 }

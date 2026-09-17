@@ -108,39 +108,43 @@ fn tokenizar(ruta: &str) -> Option<Vec<Paso<'_>>> {
     let mut pasos = Vec::new();
     let mut resto = ruta.trim().strip_prefix('$').unwrap_or(ruta.trim());
     while !resto.is_empty() {
-        if let Some(r) = resto.strip_prefix('.') {
-            let fin = r.find(['.', '[']).unwrap_or(r.len());
-            let (campo, r2) = r.split_at(fin);
-            if campo.is_empty() {
-                return None;
-            }
-            pasos.push(Paso::Campo(campo));
-            resto = r2;
-        } else if let Some(r) = resto.strip_prefix('[') {
-            let cierre = r.find(']')?;
-            let (interior, r2) = r.split_at(cierre);
-            resto = &r2[1..];
-            let interior = interior.trim();
-            if interior == "*" {
-                pasos.push(Paso::Todos);
-            } else if let Ok(i) = interior.parse::<usize>() {
-                pasos.push(Paso::Indice(i));
-            } else if let Some(f) = interior.strip_prefix("?(@.") {
-                // ?(@.type=="Ready")  ó  ?(@.type=='Ready')
-                let f = f.strip_suffix(')')?;
-                let (clave, valor) = f.split_once("==")?;
-                let valor = valor.trim().trim_matches(|c| c == '"' || c == '\'');
-                pasos.push(Paso::Filtro(clave.trim(), valor));
-            } else {
-                // Cualquier otra sintaxis (`['a']`, slices) no se soporta.
-                let campo = interior.trim_matches(|c| c == '"' || c == '\'');
-                if campo == interior {
+        match resto.chars().next() {
+            Some('.') => {
+                let r = &resto[1..];
+                let fin = r.find(['.', '[']).unwrap_or(r.len());
+                let (campo, r2) = r.split_at(fin);
+                if campo.is_empty() {
                     return None;
                 }
                 pasos.push(Paso::Campo(campo));
+                resto = r2;
             }
-        } else {
-            return None;
+            Some('[') => {
+                let r = &resto[1..];
+                let cierre = r.find(']')?;
+                let (interior, r2) = r.split_at(cierre);
+                resto = &r2[1..];
+                let interior = interior.trim();
+                if interior == "*" {
+                    pasos.push(Paso::Todos);
+                } else if let Ok(i) = interior.parse::<usize>() {
+                    pasos.push(Paso::Indice(i));
+                } else if let Some(f) = interior.strip_prefix("?(@.") {
+                    // ?(@.type=="Ready")  ó  ?(@.type=='Ready')
+                    let f = f.strip_suffix(')')?;
+                    let (clave, valor) = f.split_once("==")?;
+                    let valor = valor.trim().trim_matches(|c| c == '"' || c == '\'');
+                    pasos.push(Paso::Filtro(clave.trim(), valor));
+                } else {
+                    // Cualquier otra sintaxis (`['a']`, slices) no se soporta.
+                    let campo = interior.trim_matches(|c| c == '"' || c == '\'');
+                    if campo == interior {
+                        return None;
+                    }
+                    pasos.push(Paso::Campo(campo));
+                }
+            }
+            _ => return None,
         }
     }
     Some(pasos)
